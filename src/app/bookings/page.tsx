@@ -102,10 +102,27 @@ export default function BookingsPage() {
       });
       
       console.log('Cancel booking response status:', response.status);
-      const data = await response.json();
+      
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          setBookings(bookings.filter(booking => booking._id !== bookingId));
+          setSuccessMessage('Bokningen har avbokats');
+          console.log('Booking successfully canceled');
+          setLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte avboka bokningen - ogiltigt svar från servern');
+        }
+      }
       
       if (!response.ok) {
-        throw new Error(data.message || 'Kunde inte avboka bokningen');
+        throw new Error(data?.message || 'Kunde inte avboka bokningen');
       }
       
       // Remove the booking from the list

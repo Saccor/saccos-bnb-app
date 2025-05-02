@@ -237,9 +237,38 @@ export default function AdminPage() {
         }
       });
       
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          // Remove the booking from the list
+          const canceledBooking = bookings.find(booking => booking._id === bookingId);
+          setBookings(bookings.filter(booking => booking._id !== bookingId));
+          
+          // Update stats
+          if (canceledBooking) {
+            setStats(prev => ({
+              ...prev,
+              totalBookings: prev.totalBookings - 1,
+              totalRevenue: prev.totalRevenue - canceledBooking.totalPris
+            }));
+          }
+          
+          setSuccessMessage('Bokningen har avbokats');
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte avboka bokningen - ogiltigt svar från servern');
+        }
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte avboka bokningen');
+        throw new Error(data?.message || 'Kunde inte avboka bokningen');
       }
       
       // Remove the booking from the list

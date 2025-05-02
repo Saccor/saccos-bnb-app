@@ -176,13 +176,13 @@ export const DELETE = authMiddleware(async (request: NextRequest, user: any, { p
     await booking.save();
     
     return NextResponse.json(
-      { message: 'Bokningen har avbokats' },
+      { message: 'Bokningen har avbokats', success: true },
       { status: 200 }
     );
   } catch (error) {
     console.error('Error cancelling booking:', error);
     return NextResponse.json(
-      { message: 'Kunde inte avboka bokningen' },
+      { message: 'Kunde inte avboka bokningen', success: false },
       { status: 500 }
     );
   }

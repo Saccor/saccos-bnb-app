@@ -102,4 +102,17 @@ PropertySchema.statics.findAvailable = function() {
   });
 };
 
-export default mongoose.models.Property || mongoose.model('Property', PropertySchema); 
+// Safely access models property
+let Property;
+try {
+  // Check if models object exists
+  if (mongoose.models) {
+    Property = mongoose.models.Property || mongoose.model('Property', PropertySchema);
+  } else {
+    Property = mongoose.model('Property', PropertySchema);
+  }
+} catch (error) {
+  Property = mongoose.model('Property', PropertySchema);
+}
+
+export default Property; 

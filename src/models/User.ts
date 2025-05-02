@@ -80,6 +80,17 @@ UserSchema.methods.isListingAgent = function(): boolean {
   return this.roll === UserRole.LISTING_AGENT;
 };
 
-const User = mongoose.models.User || mongoose.model('User', UserSchema);
+// Safely access models property
+let User;
+try {
+  // Check if models object exists
+  if (mongoose.models) {
+    User = mongoose.models.User || mongoose.model('User', UserSchema);
+  } else {
+    User = mongoose.model('User', UserSchema);
+  }
+} catch (error) {
+  User = mongoose.model('User', UserSchema);
+}
 
 export default User; 

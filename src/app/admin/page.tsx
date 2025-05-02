@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ErrorMessage from '@/components/ErrorMessage';
+import { UserRole } from '@/models/User';
 
 interface User {
   _id: string;
@@ -78,7 +79,7 @@ export default function AdminPage() {
         
         const userData = await response.json();
         
-        if (userData.roll !== 'admin') {
+        if (userData.roll !== UserRole.ADMIN) {
           setError('Du har inte behörighet att visa denna sida');
           setLoading(false);
           return;

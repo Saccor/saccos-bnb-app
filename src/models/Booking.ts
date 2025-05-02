@@ -122,6 +122,17 @@ BookingSchema.statics.findByProperty = function(propertyId: string) {
   return this.find({ egendom: propertyId }).populate('skapadAv', '-losenord');
 };
 
-const Booking = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
+// Safely access models property
+let Booking;
+try {
+  // Check if models object exists
+  if (mongoose.models) {
+    Booking = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
+  } else {
+    Booking = mongoose.model('Booking', BookingSchema);
+  }
+} catch (error) {
+  Booking = mongoose.model('Booking', BookingSchema);
+}
 
 export default Booking; 

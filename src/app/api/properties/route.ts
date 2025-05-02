@@ -1,39 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
-import mongoose from 'mongoose';
-import { verifyToken } from '@/lib/auth';
-
-// Define the Property model
-const PropertySchema = new mongoose.Schema({
-  namn: { type: String, required: true },
-  beskrivning: { type: String, required: true },
-  plats: { type: String, required: true },
-  prisPerNatt: { type: Number, required: true },
-  tillganglighet: { type: Boolean, default: true },
-  agare: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  skapadDatum: { type: Date, default: Date.now },
-  uppdateradDatum: { type: Date, default: Date.now }
-});
-
-// Get the Property model (or create it if it doesn't exist)
-const getPropertyModel = () => {
-  return mongoose.models.Property || mongoose.model('Property', PropertySchema);
-};
+import Property, { PropertyStatus } from '@/models/Property';
+import { verifyToken, authMiddleware } from '@/lib/auth';
+import { UserRole } from '@/models/User';
 
 // GET /api/properties - Get all properties
 export async function GET(request: NextRequest) {
   try {
+    console.log('GET /api/properties - Starting request');
     await connectToDatabase();
-    const Property = getPropertyModel();
+    console.log('Database connected');
     
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const query: any = {};
     
+    // Get user data if authenticated
+    const token = request.headers.get('authorization')?.split(' ')[1];
+    const user = token ? await verifyToken(token) : null;
+    console.log('User authenticated:', !!user);
+    
     // Filter by availability if specified
     const tillganglighet = searchParams.get('tillganglighet');
     if (tillganglighet !== null) {
       query.tillganglighet = tillganglighet === 'true';
+    }
+    
+    // Handle property visibility based on user role
+    const status = searchParams.get('status');
+    if (user) {
+      // Authenticated user
+      if (user.roll === UserRole.ADMIN || user.roll === UserRole.LISTING_AGENT) {
+        // Admin and listing agents can see all properties
+        if (status) {
+          query.status = status;
+        }
+      } else {
+        // Regular users can see active properties, pending properties, and their own properties
+        if (status) {
+          query.status = status;
+        } else {
+          query.$or = [
+            { status: PropertyStatus.ACTIVE },
+            { status: PropertyStatus.PENDING_REVIEW },
+            { agare: user._id }
+          ];
+        }
+      }
+    } else {
+      // Unauthenticated user - only show active properties
+      query.status = PropertyStatus.ACTIVE;
     }
     
     // Filter by location if specified
@@ -51,19 +67,41 @@ export async function GET(request: NextRequest) {
       if (maxPris) query.prisPerNatt.$lte = parseInt(maxPris);
     }
     
+    // Filter by owner if specified
+    const agare = searchParams.get('agare');
+    if (agare && user) {
+      // Only allow owner filtering for admin, listing agents, or the owner themselves
+      if (user.roll === UserRole.ADMIN || user.roll === UserRole.LISTING_AGENT || user._id.toString() === agare) {
+        query.agare = agare;
+      }
+    }
+    
     // Pagination parameters
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 10;
     const page = searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1;
     const skip = (page - 1) * limit;
     
+    console.log('Final query parameters:', { query, limit, page, skip });
+    
     // Get total count for pagination
     const total = await Property.countDocuments(query);
+    console.log('Total properties found:', total);
     
     // Get properties with pagination
     const properties = await Property.find(query)
+      .populate('agare', 'namn epost')
       .sort({ skapadDatum: -1 })
       .skip(skip)
       .limit(limit);
+    
+    console.log('Properties fetched:', properties.length);
+    if (properties.length > 0) {
+      console.log('Sample property:', {
+        id: properties[0]._id,
+        namn: properties[0].namn,
+        status: properties[0].status
+      });
+    }
     
     return NextResponse.json({
       properties,
@@ -77,34 +115,16 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error fetching properties:', error);
     return NextResponse.json(
-      { message: 'Kunde inte hämta egendomar' },
+      { message: 'Kunde inte hämta egendomar', error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }
 }
 
 // POST /api/properties - Create a new property
-export async function POST(request: NextRequest) {
+export const POST = authMiddleware(async (request: NextRequest, user: any) => {
   try {
-    // Verify authentication
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Autentisering krävs' },
-        { status: 401 }
-      );
-    }
-    
-    const userData = await verifyToken(token);
-    if (!userData) {
-      return NextResponse.json(
-        { message: 'Ogiltig token' },
-        { status: 401 }
-      );
-    }
-    
     await connectToDatabase();
-    const Property = getPropertyModel();
     const data = await request.json();
     
     // Validate required fields
@@ -131,10 +151,17 @@ export async function POST(request: NextRequest) {
       data.tillganglighet = true;
     }
     
+    // Determine initial status based on user role
+    let initialStatus = PropertyStatus.PENDING_REVIEW;
+    if (user.roll === UserRole.ADMIN || user.roll === UserRole.LISTING_AGENT) {
+      initialStatus = PropertyStatus.ACTIVE;
+    }
+    
     // Create new property
     const newProperty = new Property({
       ...data,
-      agare: userData._id,
+      agare: user._id,
+      status: initialStatus,
       skapadDatum: new Date(),
       uppdateradDatum: new Date()
     });
@@ -152,4 +179,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}); 

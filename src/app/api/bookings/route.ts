@@ -1,57 +1,84 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
 import mongoose from 'mongoose';
-import { verifyToken } from '@/lib/auth';
+import { authMiddleware, roleMiddleware } from '@/lib/auth';
+import { UserRole } from '@/models/User';
 
 // Import models
-import Property from '@/models/Property';
-import Booking from '@/models/Booking';
+import Property, { PropertyStatus } from '@/models/Property';
+import Booking, { BookingStatus } from '@/models/Booking';
 
 // GET /api/bookings - Get all bookings for the current user
-export async function GET(request: NextRequest) {
+export const GET = authMiddleware(async (request: NextRequest, user: any) => {
   try {
-    // Verify authentication
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      console.log('GET /api/bookings - No token provided');
-      return NextResponse.json(
-        { message: 'Autentisering krävs' },
-        { status: 401 }
-      );
-    }
-    
-    const userData = await verifyToken(token);
-    if (!userData) {
-      console.log('GET /api/bookings - Invalid token');
-      return NextResponse.json(
-        { message: 'Ogiltig token' },
-        { status: 401 }
-      );
-    }
-    
     await connectToDatabase();
-    console.log('GET /api/bookings - Connected to database');
     
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const propertyId = searchParams.get('propertyId');
+    const status = searchParams.get('status');
     
-    // Build query - use _id instead of userId for consistency
-    const query: any = { user: userData._id };
+    // Build query based on user role
+    let query: any = {};
+    
+    // Regular users can only see their own bookings
+    if (user.roll === UserRole.USER) {
+      query.skapadAv = user._id;
+    }
     
     // Filter by property if specified
     if (propertyId) {
       query.egendom = propertyId;
     }
     
-    console.log('GET /api/bookings - Fetching bookings with query:', query);
+    // Filter by status if specified
+    if (status) {
+      query.status = status;
+    }
     
-    // Get bookings for the user (or all bookings for admin)
-    const bookings = userData.isAdmin && !propertyId && !searchParams.get('onlyMine')
-      ? await Booking.find({}).populate('egendom').populate('user', '-losenord')
-      : await Booking.find(query).populate('egendom');
+    // Get bookings with appropriate population
+    let bookings;
     
-    console.log(`GET /api/bookings - Found ${bookings.length} bookings`);
+    if (user.roll === UserRole.ADMIN) {
+      // Admins can see all bookings with full details
+      bookings = await Booking.find(query)
+        .populate('egendom')
+        .populate('skapadAv', '-losenord')
+        .sort({ skapadDatum: -1 });
+    } else if (user.roll === UserRole.LISTING_AGENT) {
+      // Listing agents can see bookings for their properties
+      if (propertyId) {
+        // If filtering by property, check if the user owns the property
+        const property = await Property.findById(propertyId);
+        if (property && property.agare.toString() === user._id) {
+          bookings = await Booking.find(query)
+            .populate('egendom')
+            .populate('skapadAv', '-losenord')
+            .sort({ skapadDatum: -1 });
+        } else {
+          bookings = [];
+        }
+      } else {
+        // Get all properties owned by the listing agent
+        const userProperties = await Property.find({ agare: user._id });
+        const propertyIds = userProperties.map(p => p._id);
+        
+        // Get bookings for those properties
+        bookings = await Booking.find({
+          ...query,
+          egendom: { $in: propertyIds }
+        })
+          .populate('egendom')
+          .populate('skapadAv', '-losenord')
+          .sort({ skapadDatum: -1 });
+      }
+    } else {
+      // Regular users can only see their own bookings
+      bookings = await Booking.find(query)
+        .populate('egendom')
+        .sort({ skapadDatum: -1 });
+    }
+    
     return NextResponse.json(bookings);
   } catch (error) {
     console.error('Error fetching bookings:', error);
@@ -60,46 +87,32 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 // POST /api/bookings - Create a new booking
-export async function POST(request: NextRequest) {
-  console.log('POST /api/bookings - Received booking request');
+export const POST = authMiddleware(async (request: NextRequest, user: any) => {
   try {
-    // Verify authentication
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      console.log('POST /api/bookings - No token provided');
-      return NextResponse.json(
-        { message: 'Autentisering krävs' },
-        { status: 401 }
-      );
-    }
-    
-    const userData = await verifyToken(token);
-    if (!userData) {
-      console.log('POST /api/bookings - Invalid token');
-      return NextResponse.json(
-        { message: 'Ogiltig token' },
-        { status: 401 }
-      );
-    }
-    
-    console.log('POST /api/bookings - User authenticated:', userData._id);
-    
     await connectToDatabase();
-    console.log('POST /api/bookings - Connected to database');
     
     const data = await request.json();
-    console.log('POST /api/bookings - Request data:', data);
     
     // Validate required fields
-    const requiredFields = ['incheckningDatum', 'utcheckningDatum', 'egendom'];
+    const requiredFields = ['incheckningDatum', 'utcheckningDatum', 'egendom', 'kund'];
     for (const field of requiredFields) {
       if (!data[field]) {
-        console.log(`POST /api/bookings - Missing required field: ${field}`);
         return NextResponse.json(
           { message: `Fältet '${field}' är obligatoriskt` },
+          { status: 400 }
+        );
+      }
+    }
+    
+    // Validate customer fields
+    const requiredCustomerFields = ['fornamn', 'efternamn', 'telefon', 'epost'];
+    for (const field of requiredCustomerFields) {
+      if (!data.kund[field]) {
+        return NextResponse.json(
+          { message: `Kundfältet '${field}' är obligatoriskt` },
           { status: 400 }
         );
       }
@@ -109,14 +122,8 @@ export async function POST(request: NextRequest) {
     const checkInDate = new Date(data.incheckningDatum);
     const checkOutDate = new Date(data.utcheckningDatum);
     
-    console.log('POST /api/bookings - Dates:', { 
-      checkInDate: checkInDate.toISOString(), 
-      checkOutDate: checkOutDate.toISOString() 
-    });
-    
     // Validate dates
     if (checkInDate >= checkOutDate) {
-      console.log('POST /api/bookings - Invalid dates: check-out must be after check-in');
       return NextResponse.json(
         { message: 'Utcheckningsdatum måste vara efter incheckningsdatum' },
         { status: 400 }
@@ -127,7 +134,6 @@ export async function POST(request: NextRequest) {
     now.setHours(0, 0, 0, 0);
     
     if (checkInDate < now) {
-      console.log('POST /api/bookings - Invalid dates: check-in date is in the past');
       return NextResponse.json(
         { message: 'Incheckningsdatum kan inte vara i det förflutna' },
         { status: 400 }
@@ -136,28 +142,18 @@ export async function POST(request: NextRequest) {
     
     // Calculate number of nights
     const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24));
-    console.log('POST /api/bookings - Calculated nights:', nights);
     
     // Get property to calculate price
     const property = await Property.findById(data.egendom);
     if (!property) {
-      console.log(`POST /api/bookings - Property not found: ${data.egendom}`);
       return NextResponse.json(
         { message: 'Egendomen hittades inte' },
         { status: 404 }
       );
     }
     
-    console.log('POST /api/bookings - Property found:', { 
-      id: property._id, 
-      name: property.namn, 
-      pricePerNight: property.prisPerNatt,
-      available: property.tillganglighet
-    });
-    
-    // Check if property is available
-    if (!property.tillganglighet) {
-      console.log('POST /api/bookings - Property is not available');
+    // Check if property is available and active
+    if (!property.canBeBooked()) {
       return NextResponse.json(
         { message: 'Egendomen är inte tillgänglig för bokning' },
         { status: 400 }
@@ -167,6 +163,7 @@ export async function POST(request: NextRequest) {
     // Check for overlapping bookings
     const overlappingBookings = await Booking.find({
       egendom: data.egendom,
+      status: { $in: [BookingStatus.PENDING, BookingStatus.ACCEPTED] },
       $or: [
         { 
           incheckningDatum: { $lte: checkOutDate },
@@ -176,7 +173,6 @@ export async function POST(request: NextRequest) {
     });
     
     if (overlappingBookings.length > 0) {
-      console.log('POST /api/bookings - Overlapping bookings found:', overlappingBookings.length);
       return NextResponse.json(
         { message: 'Egendomen är redan bokad under denna period' },
         { status: 400 }
@@ -185,43 +181,44 @@ export async function POST(request: NextRequest) {
     
     // Calculate total price
     const totalPris = nights * property.prisPerNatt;
-    console.log('POST /api/bookings - Calculated total price:', totalPris);
+    
+    // Determine initial booking status based on property owner role
+    let initialStatus = BookingStatus.PENDING;
+    
+    // If the property owner is a listing agent, the booking needs approval
+    const propertyOwner = await mongoose.model('User').findById(property.agare);
+    if (propertyOwner && propertyOwner.roll === UserRole.LISTING_AGENT) {
+      initialStatus = BookingStatus.PENDING;
+    } else {
+      // For regular users or admin-owned properties, bookings are auto-accepted
+      initialStatus = BookingStatus.ACCEPTED;
+    }
     
     // Create booking
     const bookingData = {
       incheckningDatum: checkInDate,
       utcheckningDatum: checkOutDate,
       totalPris,
-      user: userData._id,
-      egendom: data.egendom
+      antalNatter: nights,
+      kund: data.kund,
+      skapadAv: user._id,
+      egendom: data.egendom,
+      status: initialStatus,
+      skapadDatum: new Date(),
+      uppdateradDatum: new Date()
     };
     
-    console.log('POST /api/bookings - Creating booking with data:', bookingData);
-    
     const booking = await Booking.create(bookingData);
-    console.log('POST /api/bookings - Booking created successfully:', booking._id);
     
     return NextResponse.json(booking, { status: 201 });
   } catch (error) {
     console.error('Error creating booking:', error);
     
-    // More detailed error logging
     if (error instanceof Error) {
-      console.error('Error name:', error.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      
       if (error.name === 'ValidationError') {
         return NextResponse.json(
           { message: 'Valideringsfel: ' + error.message },
           { status: 400 }
-        );
-      }
-      
-      if (error.name === 'MongoError' || error.name === 'MongoServerError') {
-        return NextResponse.json(
-          { message: 'Databasfel: ' + error.message },
-          { status: 500 }
         );
       }
     }
@@ -231,97 +228,70 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 // DELETE /api/bookings/:id - Cancel a booking
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export const DELETE = authMiddleware(async (request: NextRequest, user: any) => {
   try {
-    // Get booking ID from URL
-    const url = new URL(request.url);
-    const pathParts = url.pathname.split('/');
-    const bookingId = pathParts[pathParts.length - 1];
+    await connectToDatabase();
     
-    console.log('DELETE /api/bookings/:id - Canceling booking:', bookingId);
+    const { searchParams } = new URL(request.url);
+    const bookingId = searchParams.get('id');
     
-    if (!bookingId || bookingId === 'bookings') {
-      console.log('DELETE /api/bookings/:id - No booking ID provided');
+    if (!bookingId) {
       return NextResponse.json(
         { message: 'Boknings-ID krävs' },
         { status: 400 }
       );
     }
     
-    // Verify authentication
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      console.log('DELETE /api/bookings/:id - No token provided');
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
       return NextResponse.json(
-        { message: 'Autentisering krävs' },
-        { status: 401 }
+        { message: 'Ogiltigt boknings-ID format' },
+        { status: 400 }
       );
     }
     
-    const userData = await verifyToken(token);
-    if (!userData) {
-      console.log('DELETE /api/bookings/:id - Invalid token');
-      return NextResponse.json(
-        { message: 'Ogiltig token' },
-        { status: 401 }
-      );
-    }
-    
-    await connectToDatabase();
-    console.log('DELETE /api/bookings/:id - Connected to database');
-    
-    // Find booking
+    // Find the booking
     const booking = await Booking.findById(bookingId);
     if (!booking) {
-      console.log('DELETE /api/bookings/:id - Booking not found');
       return NextResponse.json(
         { message: 'Bokningen hittades inte' },
         { status: 404 }
       );
     }
     
-    console.log('DELETE /api/bookings/:id - Booking found:', {
-      id: booking._id,
-      user: booking.user,
-      property: booking.egendom,
-      checkIn: booking.incheckningDatum
-    });
-    
-    // Check if user is authorized to cancel the booking
-    if (booking.user.toString() !== userData._id && !userData.isAdmin) {
-      console.log('DELETE /api/bookings/:id - User not authorized to cancel booking');
+    // Check if user can cancel this booking
+    if (!booking.canManage(user._id, user.roll)) {
       return NextResponse.json(
         { message: 'Du har inte behörighet att avboka denna bokning' },
         { status: 403 }
       );
     }
     
-    // Check if check-in date is in the past
-    const now = new Date();
-    if (new Date(booking.incheckningDatum) < now) {
-      console.log('DELETE /api/bookings/:id - Cannot cancel booking in the past');
+    // Check if booking can be cancelled
+    if (!booking.canBeCancelled()) {
       return NextResponse.json(
         { message: 'Kan inte avboka en bokning som redan har påbörjats' },
         { status: 400 }
       );
     }
     
-    // Delete booking
-    await Booking.findByIdAndDelete(bookingId);
-    console.log('DELETE /api/bookings/:id - Booking successfully canceled');
+    // Update booking status to cancelled
+    booking.status = BookingStatus.CANCELLED;
+    booking.uppdateradDatum = new Date();
+    await booking.save();
     
-    return NextResponse.json({ message: 'Bokning avbokad' });
-  } catch (error) {
-    console.error('Error canceling booking:', error);
     return NextResponse.json(
-      { message: 'Kunde inte avboka bokning' },
+      { message: 'Bokningen har avbokats' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Error cancelling booking:', error);
+    return NextResponse.json(
+      { message: 'Kunde inte avboka bokningen' },
       { status: 500 }
     );
   }
-} 
+}); 

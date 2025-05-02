@@ -45,23 +45,34 @@ export default function PropertiesPage() {
     // Check if user is logged in
     const token = localStorage.getItem('token');
     setIsLoggedIn(!!token);
+    console.log('Token status:', !!token);
 
     // Fetch properties
     const fetchProperties = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/properties?page=${currentPage}&limit=${limit}`);
+        console.log('Fetching properties...');
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/properties?page=${currentPage}&limit=${limit}`, {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        });
+        console.log('Response status:', response.status);
         
         if (!response.ok) {
+          const errorData = await response.json();
+          console.error('Error response:', errorData);
           throw new Error('Failed to fetch properties');
         }
         
         const data: ApiResponse = await response.json();
+        console.log('Properties data:', data);
         setProperties(data.properties || []);
         setPagination(data.pagination);
       } catch (err) {
+        console.error('Error in fetchProperties:', err);
         setError('Failed to load properties');
-        console.error(err);
       } finally {
         setLoading(false);
       }

@@ -1,24 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
 import mongoose from 'mongoose';
-import { verifyToken } from '@/lib/auth';
-
-// Define the Property model
-const PropertySchema = new mongoose.Schema({
-  namn: { type: String, required: true },
-  beskrivning: { type: String, required: true },
-  plats: { type: String, required: true },
-  prisPerNatt: { type: Number, required: true },
-  tillganglighet: { type: Boolean, default: true },
-  agare: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  skapadDatum: { type: Date, default: Date.now },
-  uppdateradDatum: { type: Date, default: Date.now }
-});
-
-// Get the Property model (or create it if it doesn't exist)
-const getPropertyModel = () => {
-  return mongoose.models.Property || mongoose.model('Property', PropertySchema);
-};
+import Property, { PropertyStatus } from '@/models/Property';
+import { authMiddleware, roleMiddleware } from '@/lib/auth';
+import { UserRole } from '@/models/User';
 
 // GET /api/properties/[id] - Get a specific property
 export async function GET(
@@ -27,7 +12,6 @@ export async function GET(
 ) {
   try {
     await connectToDatabase();
-    const Property = getPropertyModel();
     
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
@@ -37,9 +21,41 @@ export async function GET(
       );
     }
     
-    const property = await Property.findById(params.id);
+    const property = await Property.findById(params.id).populate('agare', 'namn epost');
     
     if (!property) {
+      return NextResponse.json(
+        { message: 'Egendomen hittades inte' },
+        { status: 404 }
+      );
+    }
+    
+    // Check if user is authenticated and has permission to view non-active properties
+    const token = request.headers.get('authorization')?.split(' ')[1];
+    if (token) {
+      const { verifyToken } = await import('@/lib/auth');
+      const userData = await verifyToken(token);
+      
+      if (userData) {
+        // Admin and listing agents can view all properties
+        if (userData.roll === UserRole.ADMIN || userData.roll === UserRole.LISTING_AGENT) {
+          return NextResponse.json(property);
+        }
+        
+        // Property owners can view their own properties
+        if (property.agare._id.toString() === userData._id) {
+          return NextResponse.json(property);
+        }
+        
+        // All authenticated users can see pending_review properties
+        if (property.status === PropertyStatus.PENDING_REVIEW) {
+          return NextResponse.json(property);
+        }
+      }
+    }
+    
+    // For non-authenticated users or users without permission, only return active properties
+    if (property.status !== PropertyStatus.ACTIVE) {
       return NextResponse.json(
         { message: 'Egendomen hittades inte' },
         { status: 404 }
@@ -57,28 +73,12 @@ export async function GET(
 }
 
 // PUT /api/properties/[id] - Update a property
-export async function PUT(
+export const PUT = authMiddleware(async (
   request: NextRequest,
+  user: any,
   { params }: { params: { id: string } }
-) {
+) => {
   try {
-    // Verify authentication
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Autentisering krävs' },
-        { status: 401 }
-      );
-    }
-    
-    const userData = await verifyToken(token);
-    if (!userData) {
-      return NextResponse.json(
-        { message: 'Ogiltig token' },
-        { status: 401 }
-      );
-    }
-    
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
@@ -88,7 +88,6 @@ export async function PUT(
     }
     
     await connectToDatabase();
-    const Property = getPropertyModel();
     
     // Get the property to check ownership
     const property = await Property.findById(params.id);
@@ -100,11 +99,8 @@ export async function PUT(
       );
     }
     
-    // Check if user is owner or admin
-    const isOwner = property.agare.toString() === userData._id.toString();
-    const isAdmin = userData.roll === 'admin';
-    
-    if (!isOwner && !isAdmin) {
+    // Check if user has permission to edit this property
+    if (!property.canEdit(user._id, user.roll)) {
       return NextResponse.json(
         { message: 'Du har inte behörighet att uppdatera denna egendom' },
         { status: 403 }
@@ -133,20 +129,26 @@ export async function PUT(
     }
     
     // Update the property
-    const updateData = {
+    const updateData: any = {
       namn: data.namn,
       beskrivning: data.beskrivning,
       plats: data.plats,
       prisPerNatt: data.prisPerNatt,
       tillganglighet: data.tillganglighet !== undefined ? data.tillganglighet : property.tillganglighet,
+      bilder: data.bilder || property.bilder,
       uppdateradDatum: new Date()
     };
+    
+    // If a regular user is updating their property, it needs to go back to pending review
+    if (user.roll === UserRole.USER && property.status === PropertyStatus.ACTIVE) {
+      updateData.status = PropertyStatus.PENDING_REVIEW;
+    }
     
     const updatedProperty = await Property.findByIdAndUpdate(
       params.id,
       updateData,
       { new: true }
-    );
+    ).populate('agare', 'namn epost');
     
     return NextResponse.json(updatedProperty);
   } catch (error) {
@@ -156,31 +158,15 @@ export async function PUT(
       { status: 500 }
     );
   }
-}
+});
 
 // DELETE /api/properties/[id] - Delete a property
-export async function DELETE(
+export const DELETE = authMiddleware(async (
   request: NextRequest,
+  user: any,
   { params }: { params: { id: string } }
-) {
+) => {
   try {
-    // Verify authentication
-    const token = request.headers.get('authorization')?.split(' ')[1];
-    if (!token) {
-      return NextResponse.json(
-        { message: 'Autentisering krävs' },
-        { status: 401 }
-      );
-    }
-    
-    const userData = await verifyToken(token);
-    if (!userData) {
-      return NextResponse.json(
-        { message: 'Ogiltig token' },
-        { status: 401 }
-      );
-    }
-    
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
@@ -190,7 +176,6 @@ export async function DELETE(
     }
     
     await connectToDatabase();
-    const Property = getPropertyModel();
     
     // Get the property to check ownership
     const property = await Property.findById(params.id);
@@ -202,11 +187,8 @@ export async function DELETE(
       );
     }
     
-    // Check if user is owner or admin
-    const isOwner = property.agare.toString() === userData._id.toString();
-    const isAdmin = userData.roll === 'admin';
-    
-    if (!isOwner && !isAdmin) {
+    // Check if user has permission to delete this property
+    if (!property.canEdit(user._id, user.roll)) {
       return NextResponse.json(
         { message: 'Du har inte behörighet att ta bort denna egendom' },
         { status: 403 }
@@ -226,4 +208,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-} 
+}); 

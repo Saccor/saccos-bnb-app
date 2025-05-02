@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
-import User from '@/models/User';
+import User, { UserRole } from '@/models/User';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -48,6 +48,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // Check if user is active
+    if (!user.aktiv) {
+      return NextResponse.json(
+        { message: 'Kontot är inaktiverat' },
+        { status: 403 }
+      );
+    }
+
     // Verify password
     let isValidPassword;
     try {
@@ -79,11 +87,14 @@ export async function POST(request: Request) {
       console.log('User object:', {
         _id: user._id.toString(),
         epost: user.epost,
-        isAdmin: user.isAdmin
+        roll: user.roll
       });
       
       token = jwt.sign(
-        { userId: user._id, isAdmin: user.isAdmin },
+        { 
+          userId: user._id,
+          roll: user.roll
+        },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -97,7 +108,19 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ token });
+    // Update last login
+    user.senastInloggning = new Date();
+    await user.save();
+
+    return NextResponse.json({ 
+      token,
+      user: {
+        _id: user._id,
+        namn: user.namn,
+        epost: user.epost,
+        roll: user.roll
+      }
+    });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

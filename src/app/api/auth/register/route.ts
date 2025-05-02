@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
-import User from '@/models/User';
+import User, { UserRole } from '@/models/User';
 import bcrypt from 'bcryptjs';
 
 export async function POST(request: Request) {
@@ -10,13 +10,13 @@ export async function POST(request: Request) {
     // Validate input
     if (!namn || !epost || !losenord) {
       return NextResponse.json(
-        { message: 'Alla fält måste fyllas i' },
+        { message: 'Alla fält är obligatoriska' },
         { status: 400 }
       );
     }
 
     // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = /^\S+@\S+\.\S+$/;
     if (!emailRegex.test(epost)) {
       return NextResponse.json(
         { message: 'Ogiltig e-postadress' },
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate password length
+    // Validate password strength
     if (losenord.length < 6) {
       return NextResponse.json(
         { message: 'Lösenordet måste vara minst 6 tecken' },
@@ -32,42 +32,40 @@ export async function POST(request: Request) {
       );
     }
 
-    // Connect to database
     await connectToDatabase();
 
     // Check if user already exists
     const existingUser = await User.findOne({ epost });
     if (existingUser) {
       return NextResponse.json(
-        { message: 'En användare med denna e-post finns redan' },
+        { message: 'E-postadressen är redan registrerad' },
         { status: 400 }
       );
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(losenord, 10);
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(losenord, salt);
 
     // Create new user
     const user = await User.create({
       namn,
       epost,
       losenord: hashedPassword,
-      isAdmin: false
+      roll: UserRole.USER, // Default role
+      aktiv: true,
+      skapadDatum: new Date()
     });
 
-    // Return user without password
-    const userResponse = {
-      id: user._id,
-      namn: user.namn,
-      epost: user.epost,
-      isAdmin: user.isAdmin,
-      skapadDatum: user.skapadDatum
-    };
-
-    return NextResponse.json(
-      { message: 'Användare skapad', user: userResponse },
-      { status: 201 }
-    );
+    return NextResponse.json({
+      message: 'Användare skapad',
+      user: {
+        _id: user._id,
+        namn: user.namn,
+        epost: user.epost,
+        roll: user.roll
+      }
+    }, { status: 201 });
   } catch (error) {
     console.error('Registration error:', error);
     return NextResponse.json(

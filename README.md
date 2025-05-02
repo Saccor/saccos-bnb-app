@@ -98,32 +98,50 @@ npm run dev
 
 5. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-### CSS Configuration
+## Models
 
-The project uses Tailwind CSS for styling. The configuration files are:
-
-- `tailwind.config.js`: Configures content paths and theme settings
-- `postcss.config.js`: Sets up PostCSS plugins for Tailwind
-- `src/app/globals.css`: Contains Tailwind directives and global styles
-
-If you encounter styling issues, ensure these files are properly configured:
-
-```bash
-# Reinstall Tailwind CSS and its dependencies
-npm install -D tailwindcss@3.3.0 postcss autoprefixer
-
-# Generate configuration files
-npx tailwindcss init -p
+### User Model
+```typescript
+{
+  namn: string;        // Required - Name
+  epost: string;       // Required, Unique - Email
+  losenord: string;    // Required, Min length: 6 - Password
+  roll: string;        // User role: USER, ADMIN, or LISTING_AGENT
+  aktiv: boolean;      // Default: true - Account active status
+  skapadDatum: Date;   // Default: Current date - Creation date
+}
 ```
 
-Then make sure your `tailwind.config.js` includes the correct content paths:
+### Property Model
+```typescript
+{
+  namn: string;           // Required - Name
+  beskrivning: string;    // Required - Description
+  plats: string;          // Required - Location
+  prisPerNatt: number;    // Required - Price per night
+  tillganglighet: boolean; // Default: true - Availability
+  status: string;          // Property status: active, inactive, pending_review, rejected
+  agare: ObjectId;         // Reference to User, Required - Created by
+  skapadDatum: Date;       // Default: Current date - Creation date
+}
+```
 
-```js
-module.exports = {
-  content: [
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  // ...
+### Booking Model
+```typescript
+{
+  skapadDatum: Date;         // Default: Current date - Creation date
+  incheckningDatum: Date;    // Required - Check-in date
+  utcheckningDatum: Date;    // Required - Check-out date
+  totalPris: number;         // Required - Total price (calculated as prisPerNatt * number of nights)
+  status: string;            // Booking status: pending, accepted, rejected, cancelled, completed
+  kund: {                    // Customer information
+    fornamn: string;         // Required - First name
+    efternamn: string;       // Required - Last name
+    telefon: string;         // Required - Phone number
+    epost: string;           // Required - Email
+  };
+  skapadAv: ObjectId;        // Reference to User, Required - User who created the booking
+  egendom: ObjectId;         // Reference to Property, Required - Property booked
 }
 ```
 
@@ -216,6 +234,31 @@ DELETE /api/properties/{id}
 Authorization: Bearer {token}
 ```
 
+#### Update Property Status (Admin Only)
+```http
+POST /api/properties/{id}/update-status
+Content-Type: application/json
+Authorization: Bearer {token}
+
+{
+  "status": "active" | "inactive" | "pending_review" | "rejected",
+  "anledning": "string"  // Required only when status is "rejected"
+}
+```
+
+#### Batch Update Property Statuses (Admin Only)
+```http
+POST /api/properties/batch-update-status
+Content-Type: application/json
+Authorization: Bearer {token}
+
+{
+  "propertyIds": ["id1", "id2", "id3"],
+  "status": "active" | "inactive" | "pending_review" | "rejected",
+  "anledning": "string"  // Required only when status is "rejected"
+}
+```
+
 ### Bookings
 
 #### Get User Bookings
@@ -226,7 +269,7 @@ Authorization: Bearer {token}
 
 Query parameters:
 - `propertyId`: Filter by property ID (string)
-- `onlyMine`: For admins, filter to only show their bookings (boolean)
+- `status`: Filter by booking status (string)
 
 #### Create Booking
 ```http
@@ -237,13 +280,15 @@ Authorization: Bearer {token}
 {
   "egendom": "string",         // Property ID
   "incheckningDatum": "string", // Check-in date (YYYY-MM-DD)
-  "utcheckningDatum": "string"  // Check-out date (YYYY-MM-DD)
+  "utcheckningDatum": "string", // Check-out date (YYYY-MM-DD)
+  "kund": {
+    "fornamn": "string",
+    "efternamn": "string",
+    "telefon": "string",
+    "epost": "string"
+  }
 }
 ```
-
-The total price is automatically calculated on the server based on:
-- The property's price per night
-- The number of nights between check-in and check-out dates
 
 #### Cancel Booking
 ```http
@@ -251,153 +296,34 @@ DELETE /api/bookings/{id}
 Authorization: Bearer {token}
 ```
 
-## Data Models
+#### Approve Booking (Listing Agents and Admins)
+```http
+POST /api/bookings/{id}/approve
+Authorization: Bearer {token}
+```
 
-### User Model
-```typescript
+#### Reject Booking (Listing Agents and Admins)
+```http
+POST /api/bookings/{id}/reject
+Content-Type: application/json
+Authorization: Bearer {token}
+
 {
-  namn: string;        // Required - Name
-  epost: string;       // Required, Unique - Email
-  losenord: string;    // Required, Min length: 6 - Password
-  isAdmin: boolean;    // Default: false - Admin status
-  skapadDatum: Date;   // Default: Current date - Creation date
+  "anledning": "string"  // Reason for rejection
 }
 ```
 
-### Property Model
-```typescript
-{
-  namn: string;           // Required - Name
-  beskrivning: string;    // Required - Description
-  plats: string;          // Required - Location
-  prisPerNatt: number;    // Required - Price per night
-  tillganglighet: boolean; // Default: true - Availability
-  skapadAv: ObjectId;     // Reference to User, Required - Created by
-  skapadDatum: Date;      // Default: Current date - Creation date
-}
-```
+## Project Requirements (Assignment)
 
-### Booking Model
-```typescript
-{
-  skapadDatum: Date;         // Default: Current date - Creation date
-  incheckningDatum: Date;    // Required - Check-in date
-  utcheckningDatum: Date;    // Required - Check-out date
-  totalPris: number;         // Required - Total price (calculated as prisPerNatt * number of nights)
-  user: ObjectId;            // Reference to User, Required - User who booked
-  egendom: ObjectId;         // Reference to Property, Required - Property booked
-}
-```
+### Godkänd (G):
+- Grundläggande funktionalitet för CRUD-operationer för Property fungerar korrekt.
+- Hantering av Properties där manipulering av egendomar så som (POST, PUT och DELETE) kan endast göras av en inloggad användare.
+- API-rutter är korrekt implementerade och svarar som förväntat.
+- Redovisat fungerande funktionalitet med en sammanhängande front och backend.
+- Enkel autentisering är implementerad.
+- All backend ska vara typad. Detta innebär att man i största mån undviker att typecasta till any och liknande genvägar.
 
-## Shared Components and Utilities
-
-### Components
-- **BookingForm**: Form for creating property bookings with date selection and automatic price calculation
-- **ErrorMessage**: Displays error messages with optional back button
-- **LoadingSpinner**: Shows a loading spinner during async operations
-- **Navigation**: Dynamic navigation menu with authentication state awareness
-- **PropertyForm**: Reusable form for creating and editing properties
-
-### Utilities
-- **auth.ts**: JWT authentication utilities
-- **db.ts**: MongoDB connection handler
-- **propertyUtils.ts**: Shared functions for property operations
-
-## Admin Functionality
-
-The Saccos BnB application includes a comprehensive admin dashboard for managing the platform:
-
-### Admin Dashboard
-
-- **Access Control**: Only users with admin privileges can access the admin dashboard
-- **Statistics Overview**: View key metrics including total properties, bookings, users, and revenue
-- **Property Management**: View, edit, and delete all properties on the platform
-- **Booking Management**: View all bookings and cancel upcoming bookings if necessary
-- **User Management**: View all users and promote regular users to admin status
-
-### Access Control
-
-Admin functionality is protected through:
-- JWT token verification
-- Role-based access control
-- Protected API endpoints
-
-To access the admin dashboard, navigate to `/admin` when logged in as an admin user.
-
-### Making a User an Admin
-
-For testing purposes, you can make a user an admin using the provided script:
-
-```bash
-# Install dependencies if not already installed
-npm install
-
-# Run the script with the user's email
-node scripts/make-admin.js user@example.com
-```
-
-This will update the user's status in the database directly, allowing them to access the admin dashboard.
-
-### Testing Admin Functionality
-
-The project includes tests to verify that the admin functionality is working correctly:
-
-```bash
-# Install test dependencies
-npm install --save-dev chai node-fetch jsonwebtoken
-
-# Run the tests
-npx mocha tests/admin.test.js
-```
-
-These tests verify:
-- The admin middleware correctly restricts access to admin-only endpoints
-- Admin users can access protected endpoints
-- Regular users are denied access to admin endpoints
-
-## Current Features
-
-- User registration and login
-- JWT authentication
-- Property listing and details view
-- Property creation, editing, and deletion (for owners and admins)
-- Booking system with automatic price calculation based on nights and price per night
-- Booking management (view and cancel bookings)
-- Admin dashboard for system-wide management
-- Responsive design with Tailwind CSS
-
-## Upcoming Features
-
-- User profile management
-- Advanced search and filtering for properties
-- Reviews and ratings
-- Payment integration
-- Email notifications for bookings
-
-## Development Guidelines
-
-- Follow the existing code structure and naming conventions
-- Use TypeScript for type safety
-- Implement proper error handling
-- Write clean, maintainable code
-- Use shared components and utilities when possible
-- Follow the DRY (Don't Repeat Yourself) principle
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License.
-
-## Acknowledgments
-
-- [Next.js](https://nextjs.org/)
-- [MongoDB](https://www.mongodb.com/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [TypeScript](https://www.typescriptlang.org/)
+### Väl Godkänd (VG): Minst 2 av nedan ska ha uppfyltlts
+- Booking (lätt): Bokningar kan endast skapas av en inloggad användare och innehåller användaruppgifter (se ovan) och property. Totalpriset beräknas baserat på pris per natt och vistelselängd.
+- Property/Listing (medel): Listings ska endast kunnas ta bort uppdateras av den som skapade dem dock så ska det vara möjligt för en (admin) att ta bort dem.
+- ListingAgent (svårare): Utveckling på booking flödet som ser en parten som user och andra som ListingAgent där ListingAgent måste godta bokningen och innan dess så har bokningen en pending status. Godtas den så blir Booking status accepted annars rejected

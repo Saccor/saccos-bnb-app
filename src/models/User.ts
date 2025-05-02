@@ -1,42 +1,85 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
-const userSchema = new mongoose.Schema({
-  namn: {
-    type: String,
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+  LISTING_AGENT = 'LISTING_AGENT'
+}
+
+const UserSchema = new Schema({
+  namn: { 
+    type: String, 
     required: [true, 'Namn krävs'],
     trim: true
   },
-  epost: {
-    type: String,
+  epost: { 
+    type: String, 
     required: [true, 'E-post krävs'],
     unique: true,
     trim: true,
-    lowercase: true,
-    match: [/^\S+@\S+\.\S+$/, 'Ogiltig e-postadress']
+    lowercase: true
   },
-  losenord: {
+  losenord: { 
+    type: String, 
+    required: [true, 'Lösenord krävs']
+  },
+  roll: {
     type: String,
-    required: [true, 'Lösenord krävs'],
-    minlength: [6, 'Lösenordet måste vara minst 6 tecken']
+    enum: Object.values(UserRole),
+    default: UserRole.USER,
+    required: true
   },
-  isAdmin: {
+  aktiv: {
     type: Boolean,
-    default: false
+    default: true
   },
-  skapadDatum: {
-    type: Date,
-    default: Date.now
+  skapadDatum: { 
+    type: Date, 
+    default: Date.now 
+  },
+  uppdateradDatum: { 
+    type: Date, 
+    default: Date.now 
+  },
+  senastInloggning: {
+    type: Date
   }
 });
 
+// Update the updatedDatum field before saving
+UserSchema.pre('save', function(next) {
+  this.uppdateradDatum = new Date();
+  next();
+});
+
 // Prevent password from being sent to client
-userSchema.set('toJSON', {
+UserSchema.set('toJSON', {
   transform: function(doc, ret) {
     delete ret.losenord;
     return ret;
   }
 });
 
-export const User = mongoose.models.User || mongoose.model('User', userSchema);
+// Add method to check if user has a specific role
+UserSchema.methods.hasRole = function(role: UserRole): boolean {
+  return this.roll === role;
+};
+
+// Add method to check if user has any of the given roles
+UserSchema.methods.hasAnyRole = function(roles: UserRole[]): boolean {
+  return roles.includes(this.roll);
+};
+
+// Add a method to check if user is an admin
+UserSchema.methods.isAdmin = function(): boolean {
+  return this.roll === UserRole.ADMIN;
+};
+
+// Add a method to check if user is a listing agent
+UserSchema.methods.isListingAgent = function(): boolean {
+  return this.roll === UserRole.LISTING_AGENT;
+};
+
+const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
 export default User; 

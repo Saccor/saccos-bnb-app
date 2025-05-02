@@ -34,8 +34,13 @@ export default function Home() {
     async function fetchProperties() {
       try {
         setLoading(true);
+        const token = localStorage.getItem('token');
         // Fetch properties with a limit of 3 for featured section
-        const response = await fetch('/api/properties?limit=3');
+        const response = await fetch('/api/properties?limit=3', {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          }
+        });
         
         if (!response.ok) {
           throw new Error('Failed to fetch properties');

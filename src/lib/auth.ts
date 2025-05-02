@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import connectToDatabase from './db'; // Use the Mongoose connection
 import mongoose from 'mongoose';
+import { UserRole } from '@/models/User';
 
 export interface DecodedToken {
   userId: string;
-  isAdmin: boolean;
+  roll: UserRole;
   [key: string]: any; // Allow for additional properties
 }
 
@@ -23,14 +24,6 @@ export async function verifyToken(token: string) {
     
     console.log('Attempting to verify token:', token.substring(0, 20) + '...');
     
-    // Decode the token without verification first to inspect its structure
-    try {
-      const decoded = jwt.decode(token);
-      console.log('Decoded token (without verification):', decoded);
-    } catch (decodeError) {
-      console.error('Error decoding token:', decodeError);
-    }
-    
     // Now verify the token
     const decoded = jwt.verify(token, process.env.JWT_SECRET) as DecodedToken;
     console.log('Verified decoded token:', decoded);
@@ -43,30 +36,28 @@ export async function verifyToken(token: string) {
     // Connect to the database using Mongoose
     await connectToDatabase();
     
-    console.log('Looking for user with ID:', decoded.userId);
-    
-    // Import the User model dynamically to avoid circular dependencies
-    const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({
-      namn: String,
-      epost: String,
-      losenord: String,
-      isAdmin: Boolean
-    }));
-    
-    // Try to find the user with the ID from the token
-    let user;
-    try {
-      user = await User.findById(decoded.userId);
-      console.log('User found in database:', user ? 'Yes' : 'No');
-    } catch (dbError) {
-      console.error('Error finding user in database:', dbError);
+    // Get User model with proper schema
+    const User = mongoose.models.User;
+    if (!User) {
+      console.error('User model not found');
       return null;
     }
     
+    // Find user by ID
+    const user = await User.findById(decoded.userId);
     if (!user) {
       console.log('User not found in database');
       return null;
     }
+    
+    if (!user.aktiv) {
+      console.log('User account is inactive');
+      return null;
+    }
+    
+    // Update last login
+    user.senastInloggning = new Date();
+    await user.save();
     
     // Convert Mongoose document to plain object
     const userObject = user.toObject();
@@ -74,8 +65,7 @@ export async function verifyToken(token: string) {
     // Return user data with consistent format
     return {
       ...userObject,
-      _id: userObject._id.toString(), // Convert ObjectId to string for consistency
-      roll: userObject.isAdmin ? 'admin' : 'user' // Map isAdmin to roll for consistency
+      _id: userObject._id.toString()
     };
   } catch (error) {
     console.error('Token verification error:', error);
@@ -93,57 +83,61 @@ export async function verifyAuth(request: NextRequest) {
     };
   }
   
-  try {
-    if (!process.env.JWT_SECRET) {
-      throw new Error('JWT_SECRET is not defined in environment variables');
-    }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as DecodedToken;
-    return {
-      authenticated: true,
-      user: decoded
-    };
-  } catch (error) {
+  const user = await verifyToken(token);
+  if (!user) {
     return {
       authenticated: false,
       error: 'Ogiltig token'
     };
   }
+  
+  return {
+    authenticated: true,
+    user
+  };
 }
 
 export function authMiddleware(handler: Function) {
   return async (request: NextRequest) => {
-    const authResult = await verifyAuth(request);
+    const auth = await verifyAuth(request);
     
-    if (!authResult.authenticated || !authResult.user) {
+    if (!auth.authenticated) {
       return NextResponse.json(
-        { message: authResult.error || 'Åtkomst nekad' },
+        { message: auth.error },
         { status: 401 }
       );
     }
     
-    return handler(request, authResult.user);
+    return handler(request, auth.user);
   };
 }
 
-export function adminMiddleware(handler: Function) {
-  return async (request: NextRequest) => {
-    const authResult = await verifyAuth(request);
-    
-    if (!authResult.authenticated || !authResult.user) {
-      return NextResponse.json(
-        { message: authResult.error || 'Åtkomst nekad' },
-        { status: 401 }
-      );
-    }
-    
-    if (!authResult.user.isAdmin) {
-      return NextResponse.json(
-        { message: 'Åtkomst nekad. Administratörsbehörighet krävs.' },
-        { status: 403 }
-      );
-    }
-    
-    return handler(request, authResult.user);
+export function roleMiddleware(roles: UserRole[]) {
+  return (handler: Function) => {
+    return async (request: NextRequest) => {
+      const auth = await verifyAuth(request);
+      
+      if (!auth.authenticated) {
+        return NextResponse.json(
+          { message: auth.error },
+          { status: 401 }
+        );
+      }
+      
+      if (!roles.includes(auth.user.roll)) {
+        return NextResponse.json(
+          { message: 'Otillräckliga behörigheter' },
+          { status: 403 }
+        );
+      }
+      
+      return handler(request, auth.user);
+    };
   };
-} 
+}
+
+// Convenience middleware for admin-only routes
+export const adminMiddleware = roleMiddleware([UserRole.ADMIN]);
+
+// Convenience middleware for listing agent routes
+export const listingAgentMiddleware = roleMiddleware([UserRole.LISTING_AGENT, UserRole.ADMIN]); 

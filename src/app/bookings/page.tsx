@@ -190,8 +190,12 @@ export default function BookingsPage() {
             >
               <div className="flex flex-col md:flex-row md:justify-between md:items-center">
                 <div>
-                  <h2 className="text-xl font-semibold mb-2">{booking.egendom.namn}</h2>
-                  <p className="text-gray-600 mb-2">{booking.egendom.plats}</p>
+                  <h2 className="text-xl font-semibold mb-2">
+                    {booking.egendom ? booking.egendom.namn : 'Okänd egendom'}
+                  </h2>
+                  <p className="text-gray-600 mb-2">
+                    {booking.egendom ? booking.egendom.plats : 'Okänd plats'}
+                  </p>
                 </div>
                 <div className="mt-4 md:mt-0 text-right">
                   <p className="font-bold text-lg">{booking.totalPris} kr</p>
@@ -209,16 +213,17 @@ export default function BookingsPage() {
                       <span className="font-semibold">Utcheckning:</span> {formatDate(booking.utcheckningDatum)}
                     </p>
                     <p className="text-sm text-gray-600">
-                      {calculateNights(booking.incheckningDatum, booking.utcheckningDatum)} nätter × {booking.egendom.prisPerNatt} kr/natt
+                      {calculateNights(booking.incheckningDatum, booking.utcheckningDatum)} nätter 
+                      {booking.egendom ? ` × ${booking.egendom.prisPerNatt} kr/natt` : ''}
                     </p>
                   </div>
                   
                   <div className="mt-4 md:mt-0 flex items-center">
                     <Link 
-                      href={`/properties/${booking.egendom._id}`}
+                      href={booking.egendom ? `/properties/${booking.egendom._id}` : '/properties'}
                       className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mr-2"
                     >
-                      Visa egendom
+                      {booking.egendom ? 'Visa egendom' : 'Visa egendomar'}
                     </Link>
                     
                     {isUpcoming(booking.incheckningDatum) && (

@@ -22,6 +22,7 @@ interface Property {
   plats: string;
   prisPerNatt: number;
   tillganglighet: boolean;
+  status: string;
   skapadAv: User;
   skapadDatum: string;
 }
@@ -51,6 +52,8 @@ export default function AdminPage() {
     totalUsers: 0,
     totalRevenue: 0
   });
+  const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
+  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -274,13 +277,16 @@ export default function AdminPage() {
         return;
       }
       
-      const response = await fetch('/api/auth/make-admin', {
+      const response = await fetch('/api/auth/update-role', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ userId })
+        body: JSON.stringify({ 
+          userId, 
+          role: 'ADMIN' 
+        })
       });
       
       if (!response.ok) {
@@ -291,11 +297,58 @@ export default function AdminPage() {
       // Update the user in the list
       setUsers(users.map(user => 
         user._id === userId 
-          ? { ...user, roll: 'admin', isAdmin: true } 
+          ? { ...user, roll: 'ADMIN' } 
           : user
       ));
       
       setSuccessMessage('Användaren har fått administratörsbehörighet');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ett fel uppstod');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMakeListingAgent = async (userId: string) => {
+    if (!confirm('Är du säker på att du vill göra denna användare till listningsagent?')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        router.push('/login?redirect=/admin');
+        return;
+      }
+      
+      const response = await fetch('/api/auth/update-role', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          userId, 
+          role: 'LISTING_AGENT' 
+        })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Kunde inte uppdatera användaren');
+      }
+      
+      // Update the user in the list
+      setUsers(users.map(user => 
+        user._id === userId 
+          ? { ...user, roll: 'LISTING_AGENT' } 
+          : user
+      ));
+      
+      setSuccessMessage('Användaren har fått listningsagentbehörighet');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ett fel uppstod');
@@ -313,6 +366,117 @@ export default function AdminPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return new Date(checkInDate) >= today;
+  };
+
+  const handleStatusChange = async (propertyId: string, newStatus: string) => {
+    try {
+      setStatusUpdateLoading(true);
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        router.push('/login?redirect=/admin');
+        return;
+      }
+      
+      const response = await fetch(`/api/properties/${propertyId}/update-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          status: newStatus,
+          anledning: newStatus === 'rejected' ? 'Avvisad av admin' : undefined
+        })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Kunde inte uppdatera egendomens status');
+      }
+      
+      // Update the property in the list
+      setProperties(properties.map(property => 
+        property._id === propertyId 
+          ? { ...property, status: newStatus } 
+          : property
+      ));
+      
+      setSuccessMessage(`Egendomens status har ändrats till ${newStatus}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ett fel uppstod');
+    } finally {
+      setStatusUpdateLoading(false);
+    }
+  };
+
+  const handleBatchStatusChange = async (newStatus: string) => {
+    if (selectedProperties.length === 0) {
+      setError('Inga egendomar valda');
+      return;
+    }
+
+    try {
+      setStatusUpdateLoading(true);
+      const token = localStorage.getItem('token');
+      
+      if (!token) {
+        router.push('/login?redirect=/admin');
+        return;
+      }
+      
+      const response = await fetch('/api/properties/batch-update-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          propertyIds: selectedProperties,
+          status: newStatus,
+          anledning: newStatus === 'rejected' ? 'Avvisad av admin' : undefined
+        })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Kunde inte uppdatera egendomarnas status');
+      }
+
+      const data = await response.json();
+      
+      // Update the properties in the list
+      setProperties(properties.map(property => 
+        selectedProperties.includes(property._id) 
+          ? { ...property, status: newStatus } 
+          : property
+      ));
+      
+      setSuccessMessage(`${data.modifiedCount} egendomar har fått status ${newStatus}`);
+      setSelectedProperties([]);
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ett fel uppstod');
+    } finally {
+      setStatusUpdateLoading(false);
+    }
+  };
+
+  const handleSelectProperty = (propertyId: string, isSelected: boolean) => {
+    if (isSelected) {
+      setSelectedProperties([...selectedProperties, propertyId]);
+    } else {
+      setSelectedProperties(selectedProperties.filter(id => id !== propertyId));
+    }
+  };
+
+  const handleSelectAllProperties = (isSelected: boolean) => {
+    if (isSelected) {
+      setSelectedProperties(properties.map(property => property._id));
+    } else {
+      setSelectedProperties([]);
+    }
   };
 
   if (loading && !isAdmin) {
@@ -422,12 +586,39 @@ export default function AdminPage() {
         <div>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Alla egendomar</h2>
-            <Link 
-              href="/properties/new" 
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-            >
-              Lägg till ny egendom
-            </Link>
+            <div className="flex space-x-2">
+              {selectedProperties.length > 0 && (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleBatchStatusChange('active')}
+                    disabled={statusUpdateLoading}
+                    className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 text-sm"
+                  >
+                    Aktivera valda
+                  </button>
+                  <button
+                    onClick={() => handleBatchStatusChange('inactive')}
+                    disabled={statusUpdateLoading}
+                    className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 text-sm"
+                  >
+                    Inaktivera valda
+                  </button>
+                  <button
+                    onClick={() => handleBatchStatusChange('rejected')}
+                    disabled={statusUpdateLoading}
+                    className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-sm"
+                  >
+                    Avvisa valda
+                  </button>
+                </div>
+              )}
+              <Link 
+                href="/properties/new" 
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              >
+                Lägg till ny egendom
+              </Link>
+            </div>
           </div>
           
           {properties.length === 0 ? (
@@ -439,9 +630,17 @@ export default function AdminPage() {
               <table className="min-w-full bg-white rounded-lg overflow-hidden shadow-md">
                 <thead className="bg-gray-100">
                   <tr>
+                    <th className="py-3 px-2">
+                      <input 
+                        type="checkbox" 
+                        onChange={(e) => handleSelectAllProperties(e.target.checked)}
+                        checked={selectedProperties.length === properties.length}
+                      />
+                    </th>
                     <th className="py-3 px-4 text-left">Namn</th>
                     <th className="py-3 px-4 text-left">Plats</th>
                     <th className="py-3 px-4 text-left">Pris/natt</th>
+                    <th className="py-3 px-4 text-left">Status</th>
                     <th className="py-3 px-4 text-left">Tillgänglighet</th>
                     <th className="py-3 px-4 text-left">Skapad av</th>
                     <th className="py-3 px-4 text-left">Skapad datum</th>
@@ -451,9 +650,29 @@ export default function AdminPage() {
                 <tbody>
                   {properties.map((property) => (
                     <tr key={property._id} className="border-t hover:bg-gray-50">
+                      <td className="py-3 px-2 text-center">
+                        <input 
+                          type="checkbox" 
+                          onChange={(e) => handleSelectProperty(property._id, e.target.checked)}
+                          checked={selectedProperties.includes(property._id)}
+                        />
+                      </td>
                       <td className="py-3 px-4">{property.namn}</td>
                       <td className="py-3 px-4">{property.plats}</td>
                       <td className="py-3 px-4">{property.prisPerNatt} kr</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          property.status === 'active' ? 'bg-green-100 text-green-800' :
+                          property.status === 'inactive' ? 'bg-yellow-100 text-yellow-800' :
+                          property.status === 'pending_review' ? 'bg-blue-100 text-blue-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {property.status === 'active' ? 'Aktiv' :
+                           property.status === 'inactive' ? 'Inaktiv' :
+                           property.status === 'pending_review' ? 'Väntar granskning' :
+                           'Avvisad'}
+                        </span>
+                      </td>
                       <td className="py-3 px-4">
                         {property.tillganglighet ? (
                           <span className="text-green-500">Tillgänglig</span>
@@ -464,25 +683,50 @@ export default function AdminPage() {
                       <td className="py-3 px-4">{property.skapadAv?.namn || 'Okänd'}</td>
                       <td className="py-3 px-4">{formatDate(property.skapadDatum)}</td>
                       <td className="py-3 px-4">
-                        <div className="flex space-x-2">
-                          <Link 
-                            href={`/properties/${property._id}`}
-                            className="text-blue-500 hover:underline"
-                          >
-                            Visa
-                          </Link>
-                          <Link 
-                            href={`/properties/${property._id}/edit`}
-                            className="text-green-500 hover:underline"
-                          >
-                            Redigera
-                          </Link>
-                          <button
-                            onClick={() => handleDeleteProperty(property._id)}
-                            className="text-red-500 hover:underline"
-                          >
-                            Ta bort
-                          </button>
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex space-x-2">
+                            <Link 
+                              href={`/properties/${property._id}`}
+                              className="text-blue-500 hover:underline text-sm"
+                            >
+                              Visa
+                            </Link>
+                            <Link 
+                              href={`/properties/${property._id}/edit`}
+                              className="text-green-500 hover:underline text-sm"
+                            >
+                              Redigera
+                            </Link>
+                            <button
+                              onClick={() => handleDeleteProperty(property._id)}
+                              className="text-red-500 hover:underline text-sm"
+                            >
+                              Ta bort
+                            </button>
+                          </div>
+                          <div className="flex space-x-2 mt-1">
+                            <button
+                              onClick={() => handleStatusChange(property._id, 'active')}
+                              className="text-green-600 hover:underline text-xs"
+                              disabled={property.status === 'active' || statusUpdateLoading}
+                            >
+                              Aktivera
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(property._id, 'inactive')}
+                              className="text-yellow-600 hover:underline text-xs"
+                              disabled={property.status === 'inactive' || statusUpdateLoading}
+                            >
+                              Inaktivera
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(property._id, 'rejected')}
+                              className="text-red-600 hover:underline text-xs"
+                              disabled={property.status === 'rejected' || statusUpdateLoading}
+                            >
+                              Avvisa
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -596,12 +840,20 @@ export default function AdminPage() {
                       <td className="py-3 px-4">{user.skapadDatum ? formatDate(user.skapadDatum) : 'Okänd'}</td>
                       <td className="py-3 px-4">
                         <div className="flex space-x-2">
-                          {user.roll !== 'admin' && (
+                          {user.roll !== 'ADMIN' && (
                             <button
                               onClick={() => handleMakeAdmin(user._id)}
                               className="text-blue-500 hover:underline"
                             >
                               Gör till admin
+                            </button>
+                          )}
+                          {user.roll !== 'LISTING_AGENT' && user.roll !== 'ADMIN' && (
+                            <button
+                              onClick={() => handleMakeListingAgent(user._id)}
+                              className="text-green-500 hover:underline"
+                            >
+                              Gör till agent
                             </button>
                           )}
                         </div>

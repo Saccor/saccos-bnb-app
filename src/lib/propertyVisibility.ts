@@ -2,6 +2,16 @@ import { PropertyStatus } from '@/models/Property';
 import { UserRole } from '@/models/User';
 
 /**
+ * Helper function to check if user has a specific role (case-insensitive)
+ */
+function hasRole(user: any, role: UserRole): boolean {
+  if (!user || !user.roll) return false;
+  
+  const userRole = typeof user.roll === 'string' ? user.roll.toUpperCase() : user.roll;
+  return userRole === role || userRole === role.toString();
+}
+
+/**
  * Creates a MongoDB query filter for property visibility based on user role
  * @param user The authenticated user object (or null if not authenticated)
  * @param requestedStatus Optional specific status filter from the query params
@@ -13,7 +23,10 @@ export function getPropertyVisibilityFilter(user: any | null, requestedStatus?: 
   
   if (user) {
     // Authenticated user
-    if (user.roll === UserRole.ADMIN || user.roll === UserRole.LISTING_AGENT) {
+    const isAdmin = hasRole(user, UserRole.ADMIN);
+    const isListingAgent = hasRole(user, UserRole.LISTING_AGENT);
+    
+    if (isAdmin || isListingAgent) {
       // Admin and listing agents can see all properties
       if (requestedStatus) {
         query.status = requestedStatus;
@@ -58,12 +71,25 @@ export function canViewProperty(user: any | null, property: any): boolean {
   }
   
   // Admin and listing agents can view all properties
-  if (user.roll === UserRole.ADMIN || user.roll === UserRole.LISTING_AGENT) {
+  const isAdmin = hasRole(user, UserRole.ADMIN);
+  const isListingAgent = hasRole(user, UserRole.LISTING_AGENT);
+  
+  if (isAdmin || isListingAgent) {
     return true;
   }
   
   // Property owners can view their own properties
-  if (property.agare._id && property.agare._id.toString() === user._id) {
+  // Handle both populated and unpopulated agare
+  let isOwner = false;
+  if (property.agare) {
+    if (typeof property.agare === 'string') {
+      isOwner = property.agare === user._id;
+    } else if (property.agare._id) {
+      isOwner = property.agare._id.toString() === user._id;
+    }
+  }
+  
+  if (isOwner) {
     return true;
   }
   

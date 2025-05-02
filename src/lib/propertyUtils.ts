@@ -62,10 +62,39 @@ export async function fetchPropertyById(propertyId: string, token?: string | nul
  * @returns True if the user is authorized, false otherwise
  */
 export function isAuthorizedToEdit(userData: any, propertyData: any) {
-  if (!userData || !propertyData) return false;
+  if (!userData || !propertyData) {
+    console.log('isAuthorizedToEdit: Missing user or property data');
+    return false;
+  }
+  
+  console.log('isAuthorizedToEdit - Checking authorization with:', { 
+    userId: userData._id,
+    userRole: userData.roll,
+    propertyOwner: typeof propertyData.agare === 'object' 
+      ? propertyData.agare._id || propertyData.agare.id || 'Unknown' 
+      : propertyData.agare || 'Unknown'
+  });
+  
+  // Properly check if user is admin (case insensitive)
+  const isAdmin = userData.roll === 'ADMIN' || userData.roll === 'admin';
+  
+  // Check if user is the owner
+  let isOwner = false;
+  
+  // Handle both _id and string representation for owner comparison
+  if (propertyData.agare) {
+    if (typeof propertyData.agare === 'string') {
+      isOwner = userData._id === propertyData.agare;
+    } else if (propertyData.agare._id) {
+      isOwner = userData._id === propertyData.agare._id;
+    }
+  }
+  
+  const authorized = isOwner || isAdmin;
+  console.log('isAuthorizedToEdit - Result:', { isAdmin, isOwner, authorized });
   
   // User is authorized if they are the owner or an admin
-  return userData._id === propertyData.agare || userData.roll === 'admin';
+  return authorized;
 }
 
 /**

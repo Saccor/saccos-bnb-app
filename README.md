@@ -327,3 +327,7 @@ Authorization: Bearer {token}
 - Booking (lätt): Bokningar kan endast skapas av en inloggad användare och innehåller användaruppgifter (se ovan) och property. Totalpriset beräknas baserat på pris per natt och vistelselängd.
 - Property/Listing (medel): Listings ska endast kunnas ta bort uppdateras av den som skapade dem dock så ska det vara möjligt för en (admin) att ta bort dem.
 - ListingAgent (svårare): Utveckling på booking flödet som ser en parten som user och andra som ListingAgent där ListingAgent måste godta bokningen och innan dess så har bokningen en pending status. Godtas den så blir Booking status accepted annars rejected
+
+
+Property/Listing: "(måste inte finnas frontend för detta)" togs bort då det blev en för lätt uppgift för VG
+User: Togs helt bort och ersattes av ListingAgent. Detta då User var väldigt lik en annan uppgift för  VG

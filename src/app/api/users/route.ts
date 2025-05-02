@@ -11,11 +11,11 @@ async function handler(req: NextRequest) {
     // Fetch all users, excluding password field
     const users = await User.find({}).select('-losenord');
     
-    return NextResponse.json(users);
+    return NextResponse.json({ users, success: true });
   } catch (error) {
     console.error('Error fetching users:', error);
     return NextResponse.json(
-      { message: 'Ett fel uppstod vid hämtning av användare' },
+      { message: 'Ett fel uppstod vid hämtning av användare', success: false },
       { status: 500 }
     );
   }

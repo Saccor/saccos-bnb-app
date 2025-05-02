@@ -153,12 +153,34 @@ export default function PropertyForm({
         })
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Något gick fel');
+      // Safe JSON parsing with error handling
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still consider it a success
+        if (response.ok) {
+          setSuccess(isEditing ? 'Egendom uppdaterad!' : 'Egendom skapad!');
+          
+          // Redirect after a short delay
+          setTimeout(() => {
+            if (isEditing) {
+              router.push(`/properties/${propertyId}`);
+            } else {
+              router.push('/properties');
+            }
+          }, 1500);
+          return;
+        } else {
+          throw new Error('Ett fel uppstod när förfrågan behandlades');
+        }
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Något gick fel');
+      }
+
       setSuccess(isEditing ? 'Egendom uppdaterad!' : 'Egendom skapad!');
       
       // Redirect after a short delay
@@ -170,8 +192,19 @@ export default function PropertyForm({
         }
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ett fel uppstod');
-      console.error(err);
+      // Enhanced error handling with debug info if available
+      if (err instanceof Error) {
+        setError(err.message);
+        console.error('Error submitting form:', err);
+        
+        // Log any debug info that might be in the error
+        if (typeof err === 'object' && err !== null && 'debug' in err) {
+          console.error('Debug info:', (err as any).debug);
+        }
+      } else {
+        setError('Ett fel uppstod');
+        console.error('Unknown error submitting form:', err);
+      }
     } finally {
       setLoading(false);
     }

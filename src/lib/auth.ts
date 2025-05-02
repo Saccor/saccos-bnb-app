@@ -98,40 +98,56 @@ export async function verifyAuth(request: NextRequest) {
 }
 
 export function authMiddleware(handler: Function) {
-  return async (request: NextRequest) => {
+  return async (request: NextRequest, context: any) => {
     const auth = await verifyAuth(request);
     
     if (!auth.authenticated) {
       return NextResponse.json(
-        { message: auth.error },
+        { message: auth.error, success: false },
         { status: 401 }
       );
     }
     
-    return handler(request, auth.user);
+    return handler(request, auth.user, context);
   };
 }
 
 export function roleMiddleware(roles: UserRole[]) {
   return (handler: Function) => {
-    return async (request: NextRequest) => {
+    return async (request: NextRequest, context: any) => {
       const auth = await verifyAuth(request);
       
       if (!auth.authenticated) {
         return NextResponse.json(
-          { message: auth.error },
+          { message: auth.error, success: false },
           { status: 401 }
         );
       }
       
-      if (!roles.includes(auth.user.roll)) {
+      // Case-insensitive role check
+      const userRole = typeof auth.user.roll === 'string' 
+        ? auth.user.roll.toUpperCase() 
+        : auth.user.roll;
+      
+      const hasRole = roles.some(role => 
+        userRole === role || 
+        userRole === role.toString() || 
+        userRole === role.toString().toUpperCase()
+      );
+      
+      if (!hasRole) {
+        console.log('Access denied. User role:', userRole, 'Required roles:', roles);
         return NextResponse.json(
-          { message: 'Otillräckliga behörigheter' },
+          { 
+            message: 'Otillräckliga behörigheter',
+            debug: { userRole, requiredRoles: roles },
+            success: false
+          },
           { status: 403 }
         );
       }
       
-      return handler(request, auth.user);
+      return handler(request, auth.user, context);
     };
   };
 }

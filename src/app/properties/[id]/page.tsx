@@ -59,7 +59,7 @@ export default function PropertyDetailsPage() {
         console.log('Authentication status on property page load:', !!token);
         
         // Fetch property data
-        const propertyData = await fetchPropertyById(propertyId);
+        const propertyData = await fetchPropertyById(propertyId, token);
         if (!propertyData) {
           setError('Egendomen hittades inte');
           setLoading(false);
@@ -79,6 +79,10 @@ export default function PropertyDetailsPage() {
               propertyAgare: typeof propertyData.agare === 'object' ? propertyData.agare._id : propertyData.agare
             });
             
+            // Use the isAuthorizedToEdit function for consistent permission checking
+            const authorized = isAuthorizedToEdit(userData, propertyData);
+            console.log('Authorization check result:', authorized);
+            
             // Check if user is admin
             const userIsAdmin = userData.roll === 'admin' || userData.roll === 'ADMIN';
             setIsAdmin(userIsAdmin);
@@ -91,7 +95,7 @@ export default function PropertyDetailsPage() {
             const userIsOwner = userData._id === ownerId;
             setIsOwner(userIsOwner);
             
-            console.log('Permission check:', { userIsAdmin, userIsOwner });
+            console.log('Permission check:', { userIsAdmin, userIsOwner, canEdit: authorized });
           } else {
             console.log('User data could not be loaded, token may be invalid');
             localStorage.removeItem('token');

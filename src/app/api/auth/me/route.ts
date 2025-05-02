@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     if (!token) {
       console.log('No token provided in /api/auth/me');
       return NextResponse.json(
-        { message: 'Ingen token tillhandahållen' },
+        { message: 'Ingen token tillhandahållen', success: false },
         { status: 401 }
       );
     }
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     if (!userData) {
       console.log('Invalid token or user not found in /api/auth/me');
       return NextResponse.json(
-        { message: 'Ogiltig token' },
+        { message: 'Ogiltig token', success: false },
         { status: 401 }
       );
     }
@@ -35,11 +35,11 @@ export async function GET(request: NextRequest) {
     // Log the user data for debugging
     console.log('User data from /api/auth/me:', userWithoutPassword);
     
-    return NextResponse.json(userWithoutPassword);
+    return NextResponse.json({ ...userWithoutPassword, success: true });
   } catch (error) {
     console.error('Error fetching user data:', error);
     return NextResponse.json(
-      { message: 'Kunde inte hämta användarinformation' },
+      { message: 'Kunde inte hämta användarinformation', success: false },
       { status: 500 }
     );
   }

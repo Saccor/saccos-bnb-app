@@ -19,7 +19,7 @@ export async function GET(
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt ID-format' },
+        { message: 'Ogiltigt ID-format', success: false },
         { status: 400 }
       );
     }
@@ -28,7 +28,7 @@ export async function GET(
     
     if (!property) {
       return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
+        { message: 'Egendomen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -39,18 +39,21 @@ export async function GET(
     
     // Check if user can view the property using our utility
     if (canViewProperty(userData, property)) {
-      return NextResponse.json(property);
+      return NextResponse.json({
+        ...property.toObject(),
+        success: true
+      });
     }
     
     // If we reach here, the user doesn't have permission to view this property
     return NextResponse.json(
-      { message: 'Denna egendom är inte tillgänglig' },
+      { message: 'Denna egendom är inte tillgänglig', success: false },
       { status: 403 }
     );
   } catch (error) {
     logger.error('Error fetching property:', error);
     return NextResponse.json(
-      { message: 'Kunde inte hämta egendomen' },
+      { message: 'Kunde inte hämta egendomen', success: false },
       { status: 500 }
     );
   }
@@ -60,13 +63,26 @@ export async function GET(
 export const PUT = authMiddleware(async (
   request: NextRequest,
   user: any,
-  { params }: { params: { id: string } }
+  context: any
 ) => {
+  console.log("PUT request received for property with context:", context);
+  
+  // Safety check for params
+  if (!context || !context.params || !context.params.id) {
+    console.error("Missing params in context:", context);
+    return NextResponse.json(
+      { message: 'Ogiltigt context eller saknas id i params', success: false },
+      { status: 400 }
+    );
+  }
+  
+  const { params } = context;
+  
   try {
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt ID-format' },
+        { message: 'Ogiltigt ID-format', success: false },
         { status: 400 }
       );
     }
@@ -78,15 +94,30 @@ export const PUT = authMiddleware(async (
     
     if (!property) {
       return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
+        { message: 'Egendomen hittades inte', success: false },
         { status: 404 }
       );
     }
     
+    console.log('Property update permission check:', {
+      userId: user._id,
+      userRole: user.roll,
+      propertyOwner: property.agare.toString(),
+      canEdit: property.canEdit(user._id, user.roll)
+    });
+    
     // Check if user has permission to edit this property
     if (!property.canEdit(user._id, user.roll)) {
       return NextResponse.json(
-        { message: 'Du har inte behörighet att uppdatera denna egendom' },
+        { 
+          message: 'Du har inte behörighet att uppdatera denna egendom',
+          debug: {
+            userId: user._id,
+            userRole: user.roll,
+            propertyOwner: property.agare.toString()
+          },
+          success: false
+        },
         { status: 403 }
       );
     }
@@ -97,7 +128,7 @@ export const PUT = authMiddleware(async (
     const validation = validatePropertyData(data);
     if (!validation.valid) {
       return NextResponse.json(
-        { message: validation.error },
+        { message: validation.error, success: false },
         { status: 400 }
       );
     }
@@ -114,7 +145,8 @@ export const PUT = authMiddleware(async (
     };
     
     // If a regular user is updating their property, it needs to go back to pending review
-    if (user.roll === UserRole.USER && property.status === PropertyStatus.ACTIVE) {
+    const isAdmin = user.roll === UserRole.ADMIN || user.roll === 'admin';
+    if (!isAdmin && property.status === PropertyStatus.ACTIVE) {
       updateData.status = PropertyStatus.PENDING_REVIEW;
     }
     
@@ -124,11 +156,21 @@ export const PUT = authMiddleware(async (
       { new: true }
     ).populate('agare', 'namn epost');
     
-    return NextResponse.json(updatedProperty);
+    if (!updatedProperty) {
+      return NextResponse.json(
+        { message: 'Egendom hittades inte efter uppdatering', success: false },
+        { status: 500 }
+      );
+    }
+    
+    return NextResponse.json({
+      ...updatedProperty.toObject(),
+      success: true
+    });
   } catch (error) {
     logger.error('Error updating property:', error);
     return NextResponse.json(
-      { message: 'Kunde inte uppdatera egendomen' },
+      { message: 'Kunde inte uppdatera egendomen', success: false },
       { status: 500 }
     );
   }
@@ -138,13 +180,26 @@ export const PUT = authMiddleware(async (
 export const DELETE = authMiddleware(async (
   request: NextRequest,
   user: any,
-  { params }: { params: { id: string } }
+  context: any
 ) => {
+  console.log("DELETE request received for property with context:", context);
+  
+  // Safety check for params
+  if (!context || !context.params || !context.params.id) {
+    console.error("Missing params in context:", context);
+    return NextResponse.json(
+      { message: 'Ogiltigt context eller saknas id i params', success: false },
+      { status: 400 }
+    );
+  }
+  
+  const { params } = context;
+  
   try {
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt ID-format' },
+        { message: 'Ogiltigt ID-format', success: false },
         { status: 400 }
       );
     }
@@ -156,7 +211,7 @@ export const DELETE = authMiddleware(async (
     
     if (!property) {
       return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
+        { message: 'Egendomen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -164,7 +219,7 @@ export const DELETE = authMiddleware(async (
     // Check if user has permission to delete this property
     if (!property.canEdit(user._id, user.roll)) {
       return NextResponse.json(
-        { message: 'Du har inte behörighet att ta bort denna egendom' },
+        { message: 'Du har inte behörighet att ta bort denna egendom', success: false },
         { status: 403 }
       );
     }
@@ -173,12 +228,13 @@ export const DELETE = authMiddleware(async (
     await Property.findByIdAndDelete(params.id);
     
     return NextResponse.json({
-      message: 'Egendomen borttagen'
+      message: 'Egendomen borttagen',
+      success: true
     });
   } catch (error) {
     console.error('Error deleting property:', error);
     return NextResponse.json(
-      { message: 'Kunde inte ta bort egendomen' },
+      { message: 'Kunde inte ta bort egendomen', success: false },
       { status: 500 }
     );
   }

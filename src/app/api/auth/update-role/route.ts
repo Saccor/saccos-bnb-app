@@ -17,7 +17,7 @@ export const POST = adminMiddleware(async (request: NextRequest) => {
     // Validate required fields
     if (!userId) {
       return NextResponse.json(
-        { message: 'Användar-ID krävs' },
+        { message: 'Användar-ID krävs', success: false },
         { status: 400 }
       );
     }
@@ -25,7 +25,7 @@ export const POST = adminMiddleware(async (request: NextRequest) => {
     // Validate role
     if (!role || !Object.values(UserRole).includes(role)) {
       return NextResponse.json(
-        { message: 'Ogiltig roll. Måste vara USER, ADMIN, eller LISTING_AGENT' },
+        { message: 'Ogiltig roll. Måste vara USER, ADMIN, eller LISTING_AGENT', success: false },
         { status: 400 }
       );
     }
@@ -33,7 +33,7 @@ export const POST = adminMiddleware(async (request: NextRequest) => {
     // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return NextResponse.json(
-        { message: 'Ogiltigt användar-ID format' },
+        { message: 'Ogiltigt användar-ID format', success: false },
         { status: 400 }
       );
     }
@@ -45,7 +45,7 @@ export const POST = adminMiddleware(async (request: NextRequest) => {
     
     if (!targetUser) {
       return NextResponse.json(
-        { message: 'Användaren hittades inte' },
+        { message: 'Användaren hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -62,12 +62,13 @@ export const POST = adminMiddleware(async (request: NextRequest) => {
         namn: targetUser.namn,
         epost: targetUser.epost,
         roll: targetUser.roll
-      }
+      },
+      success: true
     });
   } catch (error) {
     console.error('Error updating user role:', error);
     return NextResponse.json(
-      { message: 'Kunde inte uppdatera användarens roll' },
+      { message: 'Kunde inte uppdatera användarens roll', success: false },
       { status: 500 }
     );
   }

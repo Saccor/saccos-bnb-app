@@ -14,7 +14,7 @@ export const POST = adminMiddleware(async (request: NextRequest, user: any) => {
     // Validate input
     if (!propertyIds || !Array.isArray(propertyIds) || propertyIds.length === 0) {
       return NextResponse.json(
-        { message: 'propertyIds är obligatoriskt och måste vara en array med minst ett ID' },
+        { message: 'propertyIds är obligatoriskt och måste vara en array med minst ett ID', success: false },
         { status: 400 }
       );
     }
@@ -22,7 +22,7 @@ export const POST = adminMiddleware(async (request: NextRequest, user: any) => {
     // Validate status
     if (!status || !Object.values(PropertyStatus).includes(status)) {
       return NextResponse.json(
-        { message: 'Ogiltig status', validStatuses: Object.values(PropertyStatus) },
+        { message: 'Ogiltig status', validStatuses: Object.values(PropertyStatus), success: false },
         { status: 400 }
       );
     }
@@ -30,7 +30,7 @@ export const POST = adminMiddleware(async (request: NextRequest, user: any) => {
     // If rejecting, require a reason
     if (status === PropertyStatus.REJECTED && !anledning) {
       return NextResponse.json(
-        { message: 'Anledning krävs för avvisade egendomar' },
+        { message: 'Anledning krävs för avvisade egendomar', success: false },
         { status: 400 }
       );
     }
@@ -39,7 +39,7 @@ export const POST = adminMiddleware(async (request: NextRequest, user: any) => {
     for (const id of propertyIds) {
       if (!mongoose.isValidObjectId(id)) {
         return NextResponse.json(
-          { message: `Ogiltigt ID-format: ${id}` },
+          { message: `Ogiltigt ID-format: ${id}`, success: false },
           { status: 400 }
         );
       }
@@ -71,12 +71,13 @@ export const POST = adminMiddleware(async (request: NextRequest, user: any) => {
     return NextResponse.json({
       message: `${result.modifiedCount} egendomar uppdaterade till status ${status}`,
       modifiedCount: result.modifiedCount,
-      matchedCount: result.matchedCount
+      matchedCount: result.matchedCount,
+      success: true
     });
   } catch (error) {
     console.error('Error batch updating property statuses:', error);
     return NextResponse.json(
-      { message: 'Kunde inte uppdatera egendomarnas status', error: error instanceof Error ? error.message : String(error) },
+      { message: 'Kunde inte uppdatera egendomarnas status', error: error instanceof Error ? error.message : String(error), success: false },
       { status: 500 }
     );
   }

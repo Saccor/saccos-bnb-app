@@ -14,7 +14,7 @@ export const GET = authMiddleware(async (request: NextRequest, user: any, { para
     // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt boknings-ID format' },
+        { message: 'Ogiltigt boknings-ID format', success: false },
         { status: 400 }
       );
     }
@@ -26,7 +26,7 @@ export const GET = authMiddleware(async (request: NextRequest, user: any, { para
     
     if (!booking) {
       return NextResponse.json(
-        { message: 'Bokningen hittades inte' },
+        { message: 'Bokningen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -37,21 +37,21 @@ export const GET = authMiddleware(async (request: NextRequest, user: any, { para
       if (user.roll === UserRole.LISTING_AGENT) {
         const property = await Property.findById(booking.egendom);
         if (property && property.agare.toString() === user._id) {
-          return NextResponse.json(booking);
+          return NextResponse.json({...booking.toObject(), success: true});
         }
       }
       
       return NextResponse.json(
-        { message: 'Du har inte behörighet att se denna bokning' },
+        { message: 'Du har inte behörighet att se denna bokning', success: false },
         { status: 403 }
       );
     }
     
-    return NextResponse.json(booking);
+    return NextResponse.json({...booking.toObject(), success: true});
   } catch (error) {
     console.error('Error fetching booking:', error);
     return NextResponse.json(
-      { message: 'Kunde inte hämta bokningen' },
+      { message: 'Kunde inte hämta bokningen', success: false },
       { status: 500 }
     );
   }
@@ -65,7 +65,7 @@ export const PUT = authMiddleware(async (request: NextRequest, user: any, { para
     // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt boknings-ID format' },
+        { message: 'Ogiltigt boknings-ID format', success: false },
         { status: 400 }
       );
     }
@@ -75,7 +75,7 @@ export const PUT = authMiddleware(async (request: NextRequest, user: any, { para
     
     if (!booking) {
       return NextResponse.json(
-        { message: 'Bokningen hittades inte' },
+        { message: 'Bokningen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -85,7 +85,7 @@ export const PUT = authMiddleware(async (request: NextRequest, user: any, { para
     
     if (!property) {
       return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
+        { message: 'Egendomen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -93,7 +93,7 @@ export const PUT = authMiddleware(async (request: NextRequest, user: any, { para
     // Check if user has permission to update this booking
     if (user.roll !== UserRole.ADMIN && property.agare.toString() !== user._id) {
       return NextResponse.json(
-        { message: 'Du har inte behörighet att uppdatera denna bokning' },
+        { message: 'Du har inte behörighet att uppdatera denna bokning', success: false },
         { status: 403 }
       );
     }
@@ -115,17 +115,17 @@ export const PUT = authMiddleware(async (request: NextRequest, user: any, { para
       booking.uppdateradDatum = new Date();
       await booking.save();
       
-      return NextResponse.json(booking);
+      return NextResponse.json({...booking.toObject(), success: true});
     } else {
       return NextResponse.json(
-        { message: 'Ogiltig status eller saknad status' },
+        { message: 'Ogiltig status eller saknad status', success: false },
         { status: 400 }
       );
     }
   } catch (error) {
     console.error('Error updating booking:', error);
     return NextResponse.json(
-      { message: 'Kunde inte uppdatera bokningen' },
+      { message: 'Kunde inte uppdatera bokningen', success: false },
       { status: 500 }
     );
   }
@@ -139,7 +139,7 @@ export const DELETE = authMiddleware(async (request: NextRequest, user: any, { p
     // Validate ObjectId
     if (!mongoose.Types.ObjectId.isValid(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt boknings-ID format' },
+        { message: 'Ogiltigt boknings-ID format', success: false },
         { status: 400 }
       );
     }
@@ -149,7 +149,7 @@ export const DELETE = authMiddleware(async (request: NextRequest, user: any, { p
     
     if (!booking) {
       return NextResponse.json(
-        { message: 'Bokningen hittades inte' },
+        { message: 'Bokningen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -157,7 +157,7 @@ export const DELETE = authMiddleware(async (request: NextRequest, user: any, { p
     // Check if user has permission to cancel this booking
     if (!booking.canManage(user._id, user.roll)) {
       return NextResponse.json(
-        { message: 'Du har inte behörighet att avboka denna bokning' },
+        { message: 'Du har inte behörighet att avboka denna bokning', success: false },
         { status: 403 }
       );
     }
@@ -165,7 +165,7 @@ export const DELETE = authMiddleware(async (request: NextRequest, user: any, { p
     // Check if booking can be cancelled
     if (!booking.canBeCancelled()) {
       return NextResponse.json(
-        { message: 'Kan inte avboka en bokning som redan har påbörjats' },
+        { message: 'Kan inte avboka en bokning som redan har påbörjats', success: false },
         { status: 400 }
       );
     }

@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     
     if (!token) {
       return NextResponse.json(
-        { message: 'Ingen token tillhandahållen' },
+        { message: 'Ingen token tillhandahållen', success: false },
         { status: 401 }
       );
     }
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     
     if (!userData) {
       return NextResponse.json(
-        { message: 'Ogiltig token' },
+        { message: 'Ogiltig token', success: false },
         { status: 401 }
       );
     }
@@ -29,12 +29,13 @@ export async function GET(request: NextRequest) {
         namn: userData.namn,
         epost: userData.epost,
         roll: userData.roll
-      }
+      },
+      success: true
     });
   } catch (error) {
     console.error('Token verification error:', error);
     return NextResponse.json(
-      { message: 'Autentiseringsfel' },
+      { message: 'Autentiseringsfel', success: false },
       { status: 500 }
     );
   }

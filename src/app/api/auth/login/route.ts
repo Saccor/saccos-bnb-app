@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
-import User, { UserRole } from '@/models/User';
+import User, { UserRole, IUser } from '@/models/User';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { Types } from 'mongoose';
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
     // Validate input
     if (!epost || !losenord) {
       return NextResponse.json(
-        { message: 'E-post och lösenord krävs' },
+        { message: 'E-post och lösenord krävs', success: false },
         { status: 400 }
       );
     }
@@ -23,27 +24,27 @@ export async function POST(request: Request) {
     } catch (dbError) {
       console.error('Database connection error:', dbError);
       return NextResponse.json(
-        { message: 'Kunde inte ansluta till databasen', error: dbError instanceof Error ? dbError.message : String(dbError) },
+        { message: 'Kunde inte ansluta till databasen', error: dbError instanceof Error ? dbError.message : String(dbError), success: false },
         { status: 500 }
       );
     }
 
     // Find user
-    let user;
+    let user: IUser | null;
     try {
       user = await User.findOne({ epost });
       console.log('User found:', user ? 'Yes' : 'No');
     } catch (findError) {
       console.error('User find error:', findError);
       return NextResponse.json(
-        { message: 'Fel vid sökning efter användare', error: findError instanceof Error ? findError.message : String(findError) },
+        { message: 'Fel vid sökning efter användare', error: findError instanceof Error ? findError.message : String(findError), success: false },
         { status: 500 }
       );
     }
 
     if (!user) {
       return NextResponse.json(
-        { message: 'Ogiltiga inloggningsuppgifter' },
+        { message: 'Ogiltiga inloggningsuppgifter', success: false },
         { status: 401 }
       );
     }
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     // Check if user is active
     if (!user.aktiv) {
       return NextResponse.json(
-        { message: 'Kontot är inaktiverat' },
+        { message: 'Kontot är inaktiverat', success: false },
         { status: 403 }
       );
     }
@@ -64,16 +65,27 @@ export async function POST(request: Request) {
     } catch (passwordError) {
       console.error('Password comparison error:', passwordError);
       return NextResponse.json(
-        { message: 'Fel vid lösenordsverifiering', error: passwordError instanceof Error ? passwordError.message : String(passwordError) },
+        { message: 'Fel vid lösenordsverifiering', error: passwordError instanceof Error ? passwordError.message : String(passwordError), success: false },
         { status: 500 }
       );
     }
 
     if (!isValidPassword) {
       return NextResponse.json(
-        { message: 'Ogiltiga inloggningsuppgifter' },
+        { message: 'Ogiltiga inloggningsuppgifter', success: false },
         { status: 401 }
       );
+    }
+
+    // Get user ID as string with more robust type handling
+    const userId = user._id 
+      ? user._id instanceof Types.ObjectId 
+        ? user._id.toString()
+        : String(user._id)
+      : '';
+
+    if (!userId) {
+      throw new Error('Invalid user ID');
     }
 
     // Generate JWT token
@@ -83,16 +95,16 @@ export async function POST(request: Request) {
         throw new Error('JWT_SECRET is not defined in environment variables');
       }
       
-      console.log('Generating token for user ID:', user._id);
+      console.log('Generating token for user ID:', userId);
       console.log('User object:', {
-        _id: user._id.toString(),
+        _id: userId,
         epost: user.epost,
         roll: user.roll
       });
       
       token = jwt.sign(
         { 
-          userId: user._id,
+          userId: userId,
           roll: user.roll
         },
         process.env.JWT_SECRET,
@@ -103,7 +115,7 @@ export async function POST(request: Request) {
     } catch (tokenError) {
       console.error('Token generation error:', tokenError);
       return NextResponse.json(
-        { message: 'Fel vid generering av token', error: tokenError instanceof Error ? tokenError.message : String(tokenError) },
+        { message: 'Fel vid generering av token', error: tokenError instanceof Error ? tokenError.message : String(tokenError), success: false },
         { status: 500 }
       );
     }
@@ -112,19 +124,23 @@ export async function POST(request: Request) {
     user.senastInloggning = new Date();
     await user.save();
 
+    // Create a plain JavaScript object from the mongoose document
+    const userObj = user.toObject();
+
     return NextResponse.json({ 
       token,
       user: {
-        _id: user._id,
-        namn: user.namn,
-        epost: user.epost,
-        roll: user.roll
-      }
+        _id: userId,
+        namn: userObj.namn,
+        epost: userObj.epost,
+        roll: userObj.roll
+      },
+      success: true
     });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
-      { message: 'Ett fel uppstod vid inloggning', error: error instanceof Error ? error.message : String(error) },
+      { message: 'Ett fel uppstod vid inloggning', error: error instanceof Error ? error.message : String(error), success: false },
       { status: 500 }
     );
   }

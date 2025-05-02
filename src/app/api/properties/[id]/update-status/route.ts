@@ -14,7 +14,7 @@ export const POST = adminMiddleware(async (
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt ID-format' },
+        { message: 'Ogiltigt ID-format', success: false },
         { status: 400 }
       );
     }
@@ -26,7 +26,7 @@ export const POST = adminMiddleware(async (
     
     if (!property) {
       return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
+        { message: 'Egendomen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -37,7 +37,7 @@ export const POST = adminMiddleware(async (
     // Validate the status
     if (!status || !Object.values(PropertyStatus).includes(status as PropertyStatus)) {
       return NextResponse.json(
-        { message: 'Ogiltig status', validStatuses: Object.values(PropertyStatus) },
+        { message: 'Ogiltig status', validStatuses: Object.values(PropertyStatus), success: false },
         { status: 400 }
       );
     }
@@ -57,7 +57,7 @@ export const POST = adminMiddleware(async (
       const { anledning } = await request.json();
       if (!anledning) {
         return NextResponse.json(
-          { message: 'Anledning krävs för avvisade egendomar' },
+          { message: 'Anledning krävs för avvisade egendomar', success: false },
           { status: 400 }
         );
       }
@@ -68,12 +68,13 @@ export const POST = adminMiddleware(async (
     
     return NextResponse.json({
       message: `Egendomens status uppdaterad till ${status}`,
-      property
+      property,
+      success: true
     });
   } catch (error) {
     console.error('Error updating property status:', error);
     return NextResponse.json(
-      { message: 'Kunde inte uppdatera egendomens status' },
+      { message: 'Kunde inte uppdatera egendomens status', success: false },
       { status: 500 }
     );
   }

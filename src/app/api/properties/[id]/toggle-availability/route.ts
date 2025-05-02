@@ -12,13 +12,26 @@ import logger from '@/lib/logger';
 export const POST = authMiddleware(async (
   request: NextRequest,
   user: any,
-  { params }: { params: { id: string } }
+  context: any
 ) => {
+  console.log("Toggle-availability request received with context:", context);
+  
+  // Safety check for params
+  if (!context || !context.params || !context.params.id) {
+    console.error("Missing params in context:", context);
+    return NextResponse.json(
+      { message: 'Ogiltigt context eller saknas id i params', success: false },
+      { status: 400 }
+    );
+  }
+  
+  const { params } = context;
+  
   try {
     // Validate ObjectId
     if (!mongoose.isValidObjectId(params.id)) {
       return NextResponse.json(
-        { message: 'Ogiltigt ID-format' },
+        { message: 'Ogiltigt ID-format', success: false },
         { status: 400 }
       );
     }
@@ -30,7 +43,7 @@ export const POST = authMiddleware(async (
     
     if (!property) {
       return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
+        { message: 'Egendomen hittades inte', success: false },
         { status: 404 }
       );
     }
@@ -38,7 +51,7 @@ export const POST = authMiddleware(async (
     // Check if user has permission to edit this property
     if (!property.canEdit(user._id, user.roll)) {
       return NextResponse.json(
-        { message: 'Du har inte behörighet att uppdatera denna egendom' },
+        { message: 'Du har inte behörighet att uppdatera denna egendom', success: false },
         { status: 403 }
       );
     }
@@ -53,12 +66,13 @@ export const POST = authMiddleware(async (
     
     return NextResponse.json({
       message: `Egendomen är nu ${newAvailability ? 'tillgänglig' : 'inte tillgänglig'}`,
-      property
+      property: property.toObject(),
+      success: true
     });
   } catch (error) {
     logger.error('Error toggling property availability:', error);
     return NextResponse.json(
-      { message: 'Kunde inte uppdatera egendomens tillgänglighet' },
+      { message: 'Kunde inte uppdatera egendomens tillgänglighet', success: false },
       { status: 500 }
     );
   }

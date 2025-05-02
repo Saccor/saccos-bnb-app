@@ -36,13 +36,32 @@ export default function AvailabilityToggle({
           'Authorization': `Bearer ${token}`
         }
       });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte uppdatera tillgänglighet');
+
+      // Safe JSON parsing with error handling
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still consider it a success
+        if (response.ok) {
+          // Toggle local state since we don't know the server state
+          const newAvailability = !availability;
+          setAvailability(newAvailability);
+          
+          // Call callback if provided
+          if (onToggleSuccess) {
+            onToggleSuccess(newAvailability);
+          }
+          return;
+        } else {
+          throw new Error('Ett fel uppstod när förfrågan behandlades');
+        }
       }
       
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Kunde inte uppdatera tillgänglighet');
+      }
       
       // Update local state with new availability
       setAvailability(data.property.tillganglighet);
@@ -53,6 +72,7 @@ export default function AvailabilityToggle({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ett fel uppstod');
+      console.error('Error toggling availability:', err);
     } finally {
       setLoading(false);
     }

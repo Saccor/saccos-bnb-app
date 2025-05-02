@@ -16,6 +16,12 @@ interface User {
   skapadDatum?: string;
 }
 
+interface PropertyOwner {
+  _id: string;
+  namn: string;
+  epost: string;
+}
+
 interface Property {
   _id: string;
   namn: string;
@@ -24,7 +30,8 @@ interface Property {
   prisPerNatt: number;
   tillganglighet: boolean;
   status: string;
-  skapadAv: User;
+  agare: PropertyOwner | string;
+  skapadAv?: User;  // Keep for backward compatibility
   skapadDatum: string;
 }
 
@@ -112,6 +119,16 @@ export default function AdminPage() {
       }
       
       const propertiesData = await propertiesResponse.json();
+      
+      // Debug property owner information
+      if (propertiesData.properties && propertiesData.properties.length > 0) {
+        console.log('First property owner data:', {
+          property: propertiesData.properties[0].namn,
+          agare: propertiesData.properties[0].agare,
+          skapadAv: propertiesData.properties[0].skapadAv
+        });
+      }
+      
       setProperties(propertiesData.properties || []);
       
       // Fetch bookings
@@ -137,7 +154,8 @@ export default function AdminPage() {
       
       if (usersResponse.ok) {
         const usersData = await usersResponse.json();
-        setUsers(usersData || []);
+        // Check if the response has the users array property (new format)
+        setUsers(usersData.users || usersData || []);
       } else {
         console.log('Could not fetch users:', usersResponse.status);
         // Don't set error, just log it - we'll show a message in the UI
@@ -181,9 +199,50 @@ export default function AdminPage() {
         }
       });
       
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          // Remove the property from the list
+          setProperties(properties.filter(property => property._id !== propertyId));
+          
+          // Refresh bookings as they might be affected
+          const bookingsResponse = await fetch('/api/bookings', {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          });
+          
+          if (bookingsResponse.ok) {
+            try {
+              const bookingsData = await bookingsResponse.json();
+              setBookings(bookingsData || []);
+            } catch (bookingJsonError) {
+              console.error('Error parsing bookings response:', bookingJsonError);
+            }
+          }
+          
+          // Update stats
+          setStats(prev => ({
+            ...prev,
+            totalProperties: prev.totalProperties - 1
+          }));
+          
+          setSuccessMessage('Egendomen har tagits bort');
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte ta bort egendomen - ogiltigt svar från servern');
+        }
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte ta bort egendomen');
+        throw new Error(data?.message || 'Kunde inte ta bort egendomen');
       }
       
       // Remove the property from the list
@@ -197,8 +256,12 @@ export default function AdminPage() {
       });
       
       if (bookingsResponse.ok) {
-        const bookingsData = await bookingsResponse.json();
-        setBookings(bookingsData || []);
+        try {
+          const bookingsData = await bookingsResponse.json();
+          setBookings(bookingsData || []);
+        } catch (bookingJsonError) {
+          console.error('Error parsing bookings response:', bookingJsonError);
+        }
       }
       
       // Update stats
@@ -319,9 +382,32 @@ export default function AdminPage() {
         })
       });
       
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          // Update the user in the list
+          setUsers(users.map(user => 
+            user._id === userId 
+              ? { ...user, roll: 'ADMIN' } 
+              : user
+          ));
+          
+          setSuccessMessage('Användaren har fått administratörsbehörighet');
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte uppdatera användarens roll - ogiltigt svar från servern');
+        }
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte uppdatera användaren');
+        throw new Error(data?.message || 'Kunde inte uppdatera användaren');
       }
       
       // Update the user in the list
@@ -366,9 +452,32 @@ export default function AdminPage() {
         })
       });
       
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          // Update the user in the list
+          setUsers(users.map(user => 
+            user._id === userId 
+              ? { ...user, roll: 'LISTING_AGENT' } 
+              : user
+          ));
+          
+          setSuccessMessage('Användaren har fått listningsagentbehörighet');
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte uppdatera användarens roll - ogiltigt svar från servern');
+        }
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte uppdatera användaren');
+        throw new Error(data?.message || 'Kunde inte uppdatera användaren');
       }
       
       // Update the user in the list
@@ -420,9 +529,32 @@ export default function AdminPage() {
         })
       });
       
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          // Update the property in the list
+          setProperties(properties.map(property => 
+            property._id === propertyId 
+              ? { ...property, status: newStatus } 
+              : property
+          ));
+          
+          setSuccessMessage(`Egendomens status har ändrats till ${newStatus}`);
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setStatusUpdateLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte uppdatera egendomens status - ogiltigt svar från servern');
+        }
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte uppdatera egendomens status');
+        throw new Error(data?.message || 'Kunde inte uppdatera egendomens status');
       }
       
       // Update the property in the list
@@ -469,12 +601,36 @@ export default function AdminPage() {
         })
       });
       
+      // Safe JSON parsing - handle potential JSON errors
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        // If we can't parse the JSON but the response was OK, still treat as success
+        if (response.ok) {
+          // Update the properties in the list
+          setProperties(properties.map(property => 
+            selectedProperties.includes(property._id) 
+              ? { ...property, status: newStatus } 
+              : property
+          ));
+          
+          setSuccessMessage(`${selectedProperties.length} egendomar har fått status ${newStatus}`);
+          setSelectedProperties([]);
+          setTimeout(() => setSuccessMessage(''), 3000);
+          setStatusUpdateLoading(false);
+          return;
+        } else {
+          throw new Error('Kunde inte uppdatera egendomarnas status - ogiltigt svar från servern');
+        }
+      }
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kunde inte uppdatera egendomarnas status');
+        throw new Error(data?.message || 'Kunde inte uppdatera egendomarnas status');
       }
 
-      const data = await response.json();
+      const modifiedCount = data?.modifiedCount || selectedProperties.length;
       
       // Update the properties in the list
       setProperties(properties.map(property => 
@@ -483,7 +639,7 @@ export default function AdminPage() {
           : property
       ));
       
-      setSuccessMessage(`${data.modifiedCount} egendomar har fått status ${newStatus}`);
+      setSuccessMessage(`${modifiedCount} egendomar har fått status ${newStatus}`);
       setSelectedProperties([]);
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
@@ -507,6 +663,15 @@ export default function AdminPage() {
     } else {
       setSelectedProperties([]);
     }
+  };
+
+  // Utility function to safely get owner name from property owner
+  const getOwnerName = (owner: PropertyOwner | string | undefined): string => {
+    if (!owner) return 'Okänd';
+    if (typeof owner === 'object' && 'namn' in owner) {
+      return owner.namn;
+    }
+    return 'Okänd';
   };
 
   if (loading && !isAdmin) {
@@ -710,7 +875,19 @@ export default function AdminPage() {
                           <span className="text-red-500">Inte tillgänglig</span>
                         )}
                       </td>
-                      <td className="py-3 px-4">{property.skapadAv?.namn || 'Okänd'}</td>
+                      <td className="py-3 px-4">
+                        {(() => {
+                          if (property.agare && typeof property.agare === 'object' && 'namn' in property.agare) {
+                            return property.agare.namn;
+                          }
+                          
+                          if (property.skapadAv && property.skapadAv.namn) {
+                            return property.skapadAv.namn;
+                          }
+                          
+                          return 'Okänd';
+                        })()}
+                      </td>
                       <td className="py-3 px-4">{formatDate(property.skapadDatum)}</td>
                       <td className="py-3 px-4">
                         <div className="flex flex-col space-y-1">
@@ -783,6 +960,7 @@ export default function AdminPage() {
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="py-3 px-4 text-left">Egendom</th>
+                    <th className="py-3 px-4 text-left">Ägare</th>
                     <th className="py-3 px-4 text-left">Användare</th>
                     <th className="py-3 px-4 text-left">Incheckning</th>
                     <th className="py-3 px-4 text-left">Utcheckning</th>
@@ -795,6 +973,7 @@ export default function AdminPage() {
                   {bookings.map((booking) => (
                     <tr key={booking._id} className="border-t hover:bg-gray-50">
                       <td className="py-3 px-4">{booking.egendom?.namn || 'Okänd'}</td>
+                      <td className="py-3 px-4">{getOwnerName(booking.egendom?.agare)}</td>
                       <td className="py-3 px-4">{booking.user?.namn || 'Okänd'}</td>
                       <td className="py-3 px-4">{formatDate(booking.incheckningDatum)}</td>
                       <td className="py-3 px-4">{formatDate(booking.utcheckningDatum)}</td>

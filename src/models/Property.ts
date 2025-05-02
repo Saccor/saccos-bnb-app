@@ -25,7 +25,7 @@ export interface IProperty extends Document {
   avvisningsAnledning?: string;
   
   // Methods
-  canEdit(userId: string, userRole: UserRole): boolean;
+  canEdit(userId: string, userRole: UserRole | string): boolean;
   canBeBooked(): boolean;
 }
 
@@ -104,15 +104,31 @@ PropertySchema.pre('save', function(next) {
 });
 
 // Method to check if a user can edit this property
-PropertySchema.methods.canEdit = function(userId: string, userRole: UserRole): boolean {
-  // Admin can edit any property
-  if (userRole === UserRole.ADMIN) return true;
+PropertySchema.methods.canEdit = function(userId: string, userRole: UserRole | string): boolean {
+  console.log('Property.canEdit called with:', { userId, userRole, ownerId: this.agare.toString() });
+  
+  // Normalize the role to uppercase for comparison
+  const normalizedRole = typeof userRole === 'string' ? userRole.toUpperCase() : userRole;
+  
+  // Admin can edit any property (handle both enum and string 'admin')
+  if (normalizedRole === UserRole.ADMIN || normalizedRole === 'ADMIN') {
+    console.log('User is ADMIN, granting edit permission');
+    return true;
+  }
   
   // Listing agents can edit properties they own
-  if (userRole === UserRole.LISTING_AGENT && this.agare.toString() === userId) return true;
+  if (
+    (normalizedRole === UserRole.LISTING_AGENT || normalizedRole === 'LISTING_AGENT') && 
+    this.agare.toString() === userId
+  ) {
+    console.log('User is LISTING_AGENT and owner, granting edit permission');
+    return true;
+  }
   
   // Regular users can only edit their own properties
-  return this.agare.toString() === userId;
+  const isOwner = this.agare.toString() === userId;
+  console.log('Checking if user is owner:', { isOwner });
+  return isOwner;
 };
 
 // Method to check if a property can be booked

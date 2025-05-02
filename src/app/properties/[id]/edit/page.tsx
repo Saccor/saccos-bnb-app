@@ -14,7 +14,7 @@ interface Property {
   plats: string;
   prisPerNatt: number;
   tillganglighet: boolean;
-  agare: string;
+  agare: any; // Can be string ID or object with _id
 }
 
 export default function EditPropertyPage() {
@@ -25,6 +25,7 @@ export default function EditPropertyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -52,6 +53,18 @@ export default function EditPropertyPage() {
           throw new Error('Kunde inte verifiera användaren');
         }
         
+        // Store debug info
+        const debugData = {
+          userId: userData._id,
+          userRole: userData.roll,
+          propertyOwner: typeof propertyData.agare === 'string' 
+            ? propertyData.agare 
+            : propertyData.agare?._id || 'Unknown',
+          isAuthorized: isAuthorizedToEdit(userData, propertyData)
+        };
+        setDebugInfo(debugData);
+        console.log('Auth debug info:', debugData);
+        
         // Check if user is authorized to edit
         if (isAuthorizedToEdit(userData, propertyData)) {
           setIsAuthorized(true);
@@ -75,22 +88,42 @@ export default function EditPropertyPage() {
 
   if (error) {
     return (
-      <ErrorMessage 
-        message={error}
-        onBackClick={() => router.push(`/properties/${propertyId}`)}
-        backText="Tillbaka till egendomen"
-      />
+      <div className="container mx-auto py-8">
+        <ErrorMessage 
+          message={error}
+          backUrl={`/properties/${propertyId}`}
+          backText="Tillbaka till egendomen"
+        />
+        {debugInfo && process.env.NODE_ENV === 'development' && (
+          <div className="mt-8 p-4 bg-gray-100 rounded">
+            <h3 className="text-lg font-semibold mb-2">Debug Information:</h3>
+            <pre className="text-xs overflow-auto">
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
     );
   }
 
   if (!isAuthorized) {
     return (
-      <ErrorMessage 
-        message="Du har inte behörighet att redigera denna egendom"
-        onBackClick={() => router.push(`/properties/${propertyId}`)}
-        backText="Tillbaka till egendomen"
-        type="warning"
-      />
+      <div className="container mx-auto py-8">
+        <ErrorMessage 
+          message="Du har inte behörighet att redigera denna egendom"
+          backUrl={`/properties/${propertyId}`}
+          backText="Tillbaka till egendomen"
+          type="warning"
+        />
+        {debugInfo && process.env.NODE_ENV === 'development' && (
+          <div className="mt-8 p-4 bg-gray-100 rounded">
+            <h3 className="text-lg font-semibold mb-2">Debug Information:</h3>
+            <pre className="text-xs overflow-auto">
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
     );
   }
 

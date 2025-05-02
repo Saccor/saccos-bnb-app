@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import PropertyCard from '@/components/PropertyCard';
 
 interface Property {
   _id: string;
@@ -13,6 +14,7 @@ interface Property {
   prisPerNatt: number;
   tillganglighet: boolean;
   agare: string;
+  bilder?: string[];
   skapadDatum: string;
 }
 
@@ -197,31 +199,8 @@ export default function PropertiesPage() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {properties.map((property) => (
-              <div
-                key={property._id}
-                className="border rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow"
-              >
-                <div className="p-4">
-                  <h2 className="text-xl font-semibold mb-2">{property.namn}</h2>
-                  <p className="text-gray-600 mb-2">{property.plats}</p>
-                  <p className="text-gray-700 mb-4 line-clamp-3">{property.beskrivning}</p>
-                  <div className="flex justify-between items-center">
-                    <p className="text-lg font-bold">{property.prisPerNatt} kr/natt</p>
-                    <Link
-                      href={`/properties/${property._id}`}
-                      className="text-blue-500 hover:text-blue-700"
-                    >
-                      Visa detaljer
-                    </Link>
-                  </div>
-                  <div className="mt-2 text-sm text-gray-500">
-                    {property.tillganglighet ? (
-                      <span className="text-green-500">Tillgänglig</span>
-                    ) : (
-                      <span className="text-red-500">Inte tillgänglig</span>
-                    )}
-                  </div>
-                </div>
+              <div key={property._id} className="h-full">
+                <PropertyCard property={property} />
               </div>
             ))}
           </div>

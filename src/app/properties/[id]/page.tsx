@@ -6,7 +6,9 @@ import Link from 'next/link';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ErrorMessage from '@/components/ErrorMessage';
 import BookingForm from '@/components/BookingForm';
+import AvailabilityToggle from '@/components/AvailabilityToggle';
 import { fetchCurrentUser, fetchPropertyById, isAuthorizedToEdit } from '@/lib/propertyUtils';
+import { UserRole } from '@/models/User';
 
 interface Property {
   _id: string;
@@ -15,7 +17,12 @@ interface Property {
   plats: string;
   prisPerNatt: number;
   tillganglighet: boolean;
-  agare: string;
+  agare: string | {
+    _id: string;
+    namn?: string;
+    epost?: string;
+  };
+  bilder?: string[];
   skapadDatum: string;
 }
 
@@ -67,11 +74,24 @@ export default function PropertyDetailsPage() {
           const userData = await fetchCurrentUser(token);
           if (userData) {
             console.log('User data loaded:', { 
-              isAdmin: userData.roll === 'admin', 
-              isOwner: userData._id === propertyData.agare 
+              id: userData._id,
+              roll: userData.roll,
+              propertyAgare: typeof propertyData.agare === 'object' ? propertyData.agare._id : propertyData.agare
             });
-            setIsAdmin(userData.roll === 'admin');
-            setIsOwner(userData._id === propertyData.agare);
+            
+            // Check if user is admin
+            const userIsAdmin = userData.roll === 'admin' || userData.roll === 'ADMIN';
+            setIsAdmin(userIsAdmin);
+            
+            // Check if user is owner - handle both populated and unpopulated agare field
+            const ownerId = typeof propertyData.agare === 'object' 
+              ? propertyData.agare._id 
+              : propertyData.agare;
+              
+            const userIsOwner = userData._id === ownerId;
+            setIsOwner(userIsOwner);
+            
+            console.log('Permission check:', { userIsAdmin, userIsOwner });
           } else {
             console.log('User data could not be loaded, token may be invalid');
             localStorage.removeItem('token');
@@ -123,6 +143,16 @@ export default function PropertyDetailsPage() {
     }
   };
 
+  // Add a function to handle availability toggle success
+  const handleAvailabilityToggle = (newAvailability: boolean) => {
+    if (property) {
+      setProperty({
+        ...property,
+        tillganglighet: newAvailability
+      });
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -168,6 +198,27 @@ export default function PropertyDetailsPage() {
         {/* Property Details */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow-md p-6">
+            {/* Image Gallery */}
+            {property.bilder && property.bilder.length > 0 ? (
+              <div className="mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {property.bilder.map((image, index) => (
+                    <div key={index} className="relative h-64 rounded-md overflow-hidden">
+                      <img 
+                        src={image} 
+                        alt={`Bild ${index + 1} av ${property.namn}`} 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mb-6 bg-gray-100 h-64 flex items-center justify-center rounded-md">
+                <p className="text-gray-500">Inga bilder tillgängliga</p>
+              </div>
+            )}
+
             <div className="flex justify-between items-start mb-6">
               <h1 className="text-3xl font-bold">{property.namn}</h1>
               <div className="text-lg font-bold">{property.prisPerNatt} kr/natt</div>
@@ -179,10 +230,18 @@ export default function PropertyDetailsPage() {
               </p>
               <p className="text-gray-600 mb-4">
                 <strong>Status:</strong>{' '}
-                {property.tillganglighet ? (
-                  <span className="text-green-500">Tillgänglig</span>
+                {isOwner || isAdmin ? (
+                  <span className="ml-2">
+                    <AvailabilityToggle 
+                      propertyId={property._id}
+                      initialAvailability={property.tillganglighet}
+                      onToggleSuccess={handleAvailabilityToggle}
+                    />
+                  </span>
                 ) : (
-                  <span className="text-red-500">Inte tillgänglig</span>
+                  <span className={property.tillganglighet ? "text-green-500" : "text-red-500"}>
+                    {property.tillganglighet ? 'Tillgänglig' : 'Inte tillgänglig'}
+                  </span>
                 )}
               </p>
               <div className="mt-4">

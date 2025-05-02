@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 import { UserRole } from './User';
 
 export enum PropertyStatus {
@@ -6,6 +6,32 @@ export enum PropertyStatus {
   INACTIVE = 'inactive',
   PENDING_REVIEW = 'pending_review',
   REJECTED = 'rejected'
+}
+
+// Define interface for Property document
+export interface IProperty extends Document {
+  namn: string;
+  beskrivning: string;
+  plats: string;
+  prisPerNatt: number;
+  bilder: string[];
+  tillganglighet: boolean;
+  status: PropertyStatus;
+  agare: mongoose.Types.ObjectId;
+  skapadDatum: Date;
+  uppdateradDatum: Date;
+  godkandDatum?: Date;
+  godkandAv?: mongoose.Types.ObjectId;
+  avvisningsAnledning?: string;
+  
+  // Methods
+  canEdit(userId: string, userRole: UserRole): boolean;
+  canBeBooked(): boolean;
+}
+
+// Define interface for Property model with static methods
+export interface IPropertyModel extends Model<IProperty> {
+  findAvailable(): Promise<IProperty[]>;
 }
 
 const PropertySchema = new Schema({
@@ -103,16 +129,16 @@ PropertySchema.statics.findAvailable = function() {
 };
 
 // Safely access models property
-let Property;
+let Property: IPropertyModel;
 try {
   // Check if models object exists
   if (mongoose.models) {
-    Property = mongoose.models.Property || mongoose.model('Property', PropertySchema);
+    Property = (mongoose.models.Property || mongoose.model<IProperty, IPropertyModel>('Property', PropertySchema)) as IPropertyModel;
   } else {
-    Property = mongoose.model('Property', PropertySchema);
+    Property = mongoose.model<IProperty, IPropertyModel>('Property', PropertySchema);
   }
 } catch (error) {
-  Property = mongoose.model('Property', PropertySchema);
+  Property = mongoose.model<IProperty, IPropertyModel>('Property', PropertySchema);
 }
 
 export default Property; 

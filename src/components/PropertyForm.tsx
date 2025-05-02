@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import FileUpload from './FileUpload';
 
 interface PropertyFormProps {
   propertyId?: string;
@@ -11,6 +12,7 @@ interface PropertyFormProps {
     plats: string;
     prisPerNatt: number;
     tillganglighet: boolean;
+    bilder?: string[];
   };
   isEditing?: boolean;
 }
@@ -25,16 +27,22 @@ export default function PropertyForm({
     beskrivning: '',
     plats: '',
     prisPerNatt: 0,
-    tillganglighet: true
+    tillganglighet: true,
+    bilder: [] as string[]
   });
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const router = useRouter();
 
   useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      setFormData({
+        ...initialData,
+        bilder: initialData.bilder || []
+      });
     }
   }, [initialData]);
 
@@ -53,6 +61,59 @@ export default function PropertyForm({
     }
   };
 
+  const handleFileSelect = (files: File[]) => {
+    setUploadFiles(files);
+  };
+
+  const handleRemoveExistingImage = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      bilder: prev.bilder.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Upload images first, then create/update property
+  const uploadImages = async (): Promise<string[]> => {
+    if (uploadFiles.length === 0) {
+      return [];
+    }
+
+    setUploadLoading(true);
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Du måste vara inloggad för att ladda upp bilder');
+      }
+      
+      const formData = new FormData();
+      uploadFiles.forEach(file => {
+        formData.append('files', file);
+      });
+      
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Kunde inte ladda upp bilder');
+      }
+      
+      const data = await response.json();
+      return data.urls;
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      throw error;
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -64,6 +125,15 @@ export default function PropertyForm({
       if (!token) {
         throw new Error('Du måste vara inloggad för att skapa eller redigera en egendom');
       }
+
+      // First upload images if there are any
+      let imageUrls: string[] = [];
+      if (uploadFiles.length > 0) {
+        imageUrls = await uploadImages();
+      }
+
+      // Combine existing images with new uploaded images
+      const allImages = [...formData.bilder, ...imageUrls];
 
       const url = isEditing
         ? `/api/properties/${propertyId}`
@@ -77,7 +147,10 @@ export default function PropertyForm({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          bilder: allImages
+        })
       });
 
       if (!response.ok) {
@@ -199,13 +272,25 @@ export default function PropertyForm({
           </label>
         </div>
 
+        {/* File Upload Component */}
+        <div className="mt-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Bilder
+          </label>
+          <FileUpload 
+            onFileSelect={handleFileSelect}
+            existingImages={formData.bilder}
+            onRemoveExisting={handleRemoveExistingImage}
+          />
+        </div>
+
         <div className="flex gap-4 pt-4">
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || uploadLoading}
             className="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
           >
-            {loading
+            {loading || uploadLoading
               ? 'Sparar...'
               : isEditing
               ? 'Uppdatera egendom'

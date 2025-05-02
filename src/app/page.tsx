@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import PropertyCard from "@/components/PropertyCard";
 
 interface Property {
   _id: string;
@@ -11,6 +12,7 @@ interface Property {
   prisPerNatt: number;
   beskrivning: string;
   tillganglighet: boolean;
+  bilder?: string[];
 }
 
 interface PaginationData {
@@ -95,26 +97,9 @@ export default function Home() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {properties.map((property) => (
-              <Link 
-                href={`/properties/${property._id}`} 
-                key={property._id}
-                className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow block"
-              >
-                <div className="aspect-w-16 aspect-h-9 bg-gray-200">
-                  {/* Image placeholder - could be replaced with actual property images in the future */}
-                  <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
-                    <span className="text-gray-400">Bild saknas</span>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <h3 className="font-semibold text-lg mb-2">{property.namn}</h3>
-                  <p className="text-gray-600 mb-2">{property.plats}</p>
-                  <p className="font-bold">{property.prisPerNatt} kr/natt</p>
-                  {!property.tillganglighet && (
-                    <p className="text-red-500 text-sm mt-2">Inte tillgänglig</p>
-                  )}
-                </div>
-              </Link>
+              <div key={property._id} className="h-full">
+                <PropertyCard property={property} showDescription={false} />
+              </div>
             ))}
           </div>
         )}

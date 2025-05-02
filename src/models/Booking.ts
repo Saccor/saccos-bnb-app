@@ -1,4 +1,4 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 import { UserRole } from './User';
 
 export enum BookingStatus {
@@ -7,6 +7,42 @@ export enum BookingStatus {
   REJECTED = 'rejected',
   CANCELLED = 'cancelled',
   COMPLETED = 'completed'
+}
+
+// Customer information interface
+export interface ICustomer {
+  fornamn: string;
+  efternamn: string;
+  telefon: string;
+  epost: string;
+}
+
+// Define interface for Booking document
+export interface IBooking extends Document {
+  skapadDatum: Date;
+  incheckningDatum: Date;
+  utcheckningDatum: Date;
+  totalPris: number;
+  kund: ICustomer;
+  skapadAv: mongoose.Types.ObjectId;
+  egendom: mongoose.Types.ObjectId;
+  status: BookingStatus;
+  godkandDatum?: Date;
+  godkandAv?: mongoose.Types.ObjectId;
+  avvisningsAnledning?: string;
+  antalNatter: number;
+  uppdateradDatum: Date;
+  
+  // Methods
+  canManage(userId: string, userRole: UserRole): boolean;
+  canBeCancelled(): boolean;
+}
+
+// Define interface for Booking model with static methods
+export interface IBookingModel extends Model<IBooking> {
+  findByStatus(status: BookingStatus): Promise<IBooking[]>;
+  findByUser(userId: string): Promise<IBooking[]>;
+  findByProperty(propertyId: string): Promise<IBooking[]>;
 }
 
 const BookingSchema = new Schema({
@@ -123,16 +159,16 @@ BookingSchema.statics.findByProperty = function(propertyId: string) {
 };
 
 // Safely access models property
-let Booking;
+let Booking: IBookingModel;
 try {
   // Check if models object exists
   if (mongoose.models) {
-    Booking = mongoose.models.Booking || mongoose.model('Booking', BookingSchema);
+    Booking = (mongoose.models.Booking || mongoose.model<IBooking, IBookingModel>('Booking', BookingSchema)) as IBookingModel;
   } else {
-    Booking = mongoose.model('Booking', BookingSchema);
+    Booking = mongoose.model<IBooking, IBookingModel>('Booking', BookingSchema);
   }
 } catch (error) {
-  Booking = mongoose.model('Booking', BookingSchema);
+  Booking = mongoose.model<IBooking, IBookingModel>('Booking', BookingSchema);
 }
 
 export default Booking; 

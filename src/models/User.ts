@@ -1,9 +1,32 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export enum UserRole {
   USER = 'USER',
   ADMIN = 'ADMIN',
   LISTING_AGENT = 'LISTING_AGENT'
+}
+
+// Define interface for User document
+export interface IUser extends Document {
+  namn: string;
+  epost: string;
+  losenord: string;
+  roll: UserRole;
+  aktiv: boolean;
+  skapadDatum: Date;
+  uppdateradDatum: Date;
+  senastInloggning?: Date;
+  
+  // Methods
+  hasRole(role: UserRole): boolean;
+  hasAnyRole(roles: UserRole[]): boolean;
+  isAdmin(): boolean;
+  isListingAgent(): boolean;
+}
+
+// Define interface for User model
+export interface IUserModel extends Model<IUser> {
+  // Add static methods if any
 }
 
 const UserSchema = new Schema({
@@ -81,16 +104,16 @@ UserSchema.methods.isListingAgent = function(): boolean {
 };
 
 // Safely access models property
-let User;
+let User: IUserModel;
 try {
   // Check if models object exists
   if (mongoose.models) {
-    User = mongoose.models.User || mongoose.model('User', UserSchema);
+    User = (mongoose.models.User || mongoose.model<IUser, IUserModel>('User', UserSchema)) as IUserModel;
   } else {
-    User = mongoose.model('User', UserSchema);
+    User = mongoose.model<IUser, IUserModel>('User', UserSchema);
   }
 } catch (error) {
-  User = mongoose.model('User', UserSchema);
+  User = mongoose.model<IUser, IUserModel>('User', UserSchema);
 }
 
 export default User; 

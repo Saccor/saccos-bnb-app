@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectToDatabase from '@/lib/db';
 import mongoose from 'mongoose';
 import Property, { PropertyStatus } from '@/models/Property';
-import { authMiddleware, roleMiddleware } from '@/lib/auth';
+import { authMiddleware, roleMiddleware, verifyToken } from '@/lib/auth';
 import { UserRole } from '@/models/User';
+import { canViewProperty } from '@/lib/propertyVisibility';
+import logger from '@/lib/logger';
+import { validatePropertyData } from '@/lib/validationUtils';
 
 // GET /api/properties/[id] - Get a specific property
 export async function GET(
@@ -30,41 +33,22 @@ export async function GET(
       );
     }
     
-    // Check if user is authenticated and has permission to view non-active properties
+    // Check if user is authenticated and has permission to view this property
     const token = request.headers.get('authorization')?.split(' ')[1];
-    if (token) {
-      const { verifyToken } = await import('@/lib/auth');
-      const userData = await verifyToken(token);
-      
-      if (userData) {
-        // Admin and listing agents can view all properties
-        if (userData.roll === UserRole.ADMIN || userData.roll === UserRole.LISTING_AGENT) {
-          return NextResponse.json(property);
-        }
-        
-        // Property owners can view their own properties
-        if (property.agare._id.toString() === userData._id) {
-          return NextResponse.json(property);
-        }
-        
-        // All authenticated users can see pending_review properties
-        if (property.status === PropertyStatus.PENDING_REVIEW) {
-          return NextResponse.json(property);
-        }
-      }
+    const userData = token ? await verifyToken(token) : null;
+    
+    // Check if user can view the property using our utility
+    if (canViewProperty(userData, property)) {
+      return NextResponse.json(property);
     }
     
-    // For non-authenticated users or users without permission, only return active properties
-    if (property.status !== PropertyStatus.ACTIVE) {
-      return NextResponse.json(
-        { message: 'Egendomen hittades inte' },
-        { status: 404 }
-      );
-    }
-    
-    return NextResponse.json(property);
+    // If we reach here, the user doesn't have permission to view this property
+    return NextResponse.json(
+      { message: 'Denna egendom är inte tillgänglig' },
+      { status: 403 }
+    );
   } catch (error) {
-    console.error('Error fetching property:', error);
+    logger.error('Error fetching property:', error);
     return NextResponse.json(
       { message: 'Kunde inte hämta egendomen' },
       { status: 500 }
@@ -109,21 +93,11 @@ export const PUT = authMiddleware(async (
     
     const data = await request.json();
     
-    // Validate required fields
-    const requiredFields = ['namn', 'beskrivning', 'plats', 'prisPerNatt'];
-    for (const field of requiredFields) {
-      if (!data[field]) {
-        return NextResponse.json(
-          { message: `Fältet '${field}' är obligatoriskt` },
-          { status: 400 }
-        );
-      }
-    }
-    
-    // Ensure price is a number
-    if (typeof data.prisPerNatt !== 'number' || data.prisPerNatt < 0) {
+    // Validate property data using our validation utility
+    const validation = validatePropertyData(data);
+    if (!validation.valid) {
       return NextResponse.json(
-        { message: 'Pris per natt måste vara ett positivt nummer' },
+        { message: validation.error },
         { status: 400 }
       );
     }
@@ -152,7 +126,7 @@ export const PUT = authMiddleware(async (
     
     return NextResponse.json(updatedProperty);
   } catch (error) {
-    console.error('Error updating property:', error);
+    logger.error('Error updating property:', error);
     return NextResponse.json(
       { message: 'Kunde inte uppdatera egendomen' },
       { status: 500 }

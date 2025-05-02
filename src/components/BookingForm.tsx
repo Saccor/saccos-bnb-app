@@ -6,7 +6,8 @@ import Link from 'next/link';
 import DateRangePicker from './DateRangePicker';
 import CustomerInfoForm, { CustomerInfo } from './CustomerInfoForm';
 import PriceSummary from './PriceSummary';
-import { calculateNights, calculateTotalPrice, validateDates, validateCustomerInfo } from '@/lib/bookingUtils';
+import { calculateNights, calculateTotalPrice } from '@/lib/bookingUtils';
+import { validateDates, validateCustomerInfo } from '@/lib/validationUtils';
 
 interface BookingFormProps {
   propertyId: string;

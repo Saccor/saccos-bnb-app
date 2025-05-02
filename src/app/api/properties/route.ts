@@ -3,13 +3,16 @@ import connectToDatabase from '@/lib/db';
 import Property, { PropertyStatus } from '@/models/Property';
 import { verifyToken, authMiddleware } from '@/lib/auth';
 import { UserRole } from '@/models/User';
+import { getPropertyVisibilityFilter } from '@/lib/propertyVisibility';
+import logger from '@/lib/logger';
+import { validatePropertyData } from '@/lib/validationUtils';
 
 // GET /api/properties - Get all properties
 export async function GET(request: NextRequest) {
   try {
-    console.log('GET /api/properties - Starting request');
+    logger.info('GET /api/properties - Starting request');
     await connectToDatabase();
-    console.log('Database connected');
+    logger.debug('Database connected');
     
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
@@ -18,7 +21,7 @@ export async function GET(request: NextRequest) {
     // Get user data if authenticated
     const token = request.headers.get('authorization')?.split(' ')[1];
     const user = token ? await verifyToken(token) : null;
-    console.log('User authenticated:', !!user);
+    logger.debug('User authenticated:', !!user);
     
     // Filter by availability if specified
     const tillganglighet = searchParams.get('tillganglighet');
@@ -26,31 +29,10 @@ export async function GET(request: NextRequest) {
       query.tillganglighet = tillganglighet === 'true';
     }
     
-    // Handle property visibility based on user role
+    // Apply property visibility filter based on user role
     const status = searchParams.get('status');
-    if (user) {
-      // Authenticated user
-      if (user.roll === UserRole.ADMIN || user.roll === UserRole.LISTING_AGENT) {
-        // Admin and listing agents can see all properties
-        if (status) {
-          query.status = status;
-        }
-      } else {
-        // Regular users can see active properties, pending properties, and their own properties
-        if (status) {
-          query.status = status;
-        } else {
-          query.$or = [
-            { status: PropertyStatus.ACTIVE },
-            { status: PropertyStatus.PENDING_REVIEW },
-            { agare: user._id }
-          ];
-        }
-      }
-    } else {
-      // Unauthenticated user - only show active properties
-      query.status = PropertyStatus.ACTIVE;
-    }
+    const visibilityFilter = getPropertyVisibilityFilter(user, status);
+    Object.assign(query, visibilityFilter);
     
     // Filter by location if specified
     const plats = searchParams.get('plats');
@@ -81,11 +63,11 @@ export async function GET(request: NextRequest) {
     const page = searchParams.get('page') ? parseInt(searchParams.get('page')!) : 1;
     const skip = (page - 1) * limit;
     
-    console.log('Final query parameters:', { query, limit, page, skip });
+    logger.debug('Final query parameters:', { query, limit, page, skip });
     
     // Get total count for pagination
     const total = await Property.countDocuments(query);
-    console.log('Total properties found:', total);
+    logger.debug('Total properties found:', total);
     
     // Get properties with pagination
     const properties = await Property.find(query)
@@ -94,9 +76,9 @@ export async function GET(request: NextRequest) {
       .skip(skip)
       .limit(limit);
     
-    console.log('Properties fetched:', properties.length);
+    logger.debug('Properties fetched:', properties.length);
     if (properties.length > 0) {
-      console.log('Sample property:', {
+      logger.debug('Sample property:', {
         id: properties[0]._id,
         namn: properties[0].namn,
         status: properties[0].status
@@ -113,7 +95,7 @@ export async function GET(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error('Error fetching properties:', error);
+    logger.error('Error fetching properties:', error);
     return NextResponse.json(
       { message: 'Kunde inte hämta egendomar', error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
@@ -127,21 +109,11 @@ export const POST = authMiddleware(async (request: NextRequest, user: any) => {
     await connectToDatabase();
     const data = await request.json();
     
-    // Validate required fields
-    const requiredFields = ['namn', 'beskrivning', 'plats', 'prisPerNatt'];
-    for (const field of requiredFields) {
-      if (!data[field]) {
-        return NextResponse.json(
-          { message: `Fältet '${field}' är obligatoriskt` },
-          { status: 400 }
-        );
-      }
-    }
-    
-    // Ensure price is a number
-    if (typeof data.prisPerNatt !== 'number' || data.prisPerNatt < 0) {
+    // Validate property data using our validation utility
+    const validation = validatePropertyData(data);
+    if (!validation.valid) {
       return NextResponse.json(
-        { message: 'Pris per natt måste vara ett positivt nummer' },
+        { message: validation.error },
         { status: 400 }
       );
     }
@@ -173,7 +145,7 @@ export const POST = authMiddleware(async (request: NextRequest, user: any) => {
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error creating property:', error);
+    logger.error('Error creating property:', error);
     return NextResponse.json(
       { message: 'Kunde inte skapa egendomen' },
       { status: 500 }
